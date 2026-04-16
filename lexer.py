@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from enum import Enum, auto
-from itertools import peekable
 
 class TokenType(Enum):
     LAMBDA = auto()
@@ -31,7 +30,7 @@ def lex(text: str) -> list[Token]:
                     tokens.append(Token(TokenType.LAMBDA, char))
                 case '-':
                     try:
-                        next_char = next(text)
+                        next_idx, next_char = next(t)
                         if next_char != '>':
                             raise SyntaxError(f'Expected `>` after `-`, but encountered {next_char}')
                         tokens.append(Token(TokenType.ARROW, '->'))
@@ -42,7 +41,7 @@ def lex(text: str) -> list[Token]:
                 case _ if char.isalnum():
                     name = char
                     while idx + 1 < len(text) and text[idx+1].isalnum():
-                        name += next(t)
+                        name += next(t)[1]
                         idx += 1
                     tokens.append(Token(TokenType.IDENTIFIER, name))
                 case _:
