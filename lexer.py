@@ -48,6 +48,6 @@ def lex(text: str) -> list[Token]:
                     raise SyntaxError(f"Unexpected character {char}. Don't know how to process it")
         except StopIteration:
             tokens.append(Token(TokenType.EOF, 'EOF'))
-            return tokens
+            return tokens 
                     
 

@@ -20,5 +20,20 @@ class TestLexer(unittest.TestCase):
         self.assertEqual(tokens[3].value, "x")
         self.assertEqual(tokens[4].type, TokenType.EOF)
 
-if __name__ == '__main__':
+    def test_lex_lambda_application(self):
+        tokens = lex("(/x -> x) y")
+        self.assertEqual(len(tokens), 8)
+        self.assertEqual(tokens[0].type, TokenType.LPAREN)
+        self.assertEqual(tokens[1].type, TokenType.LAMBDA)
+        self.assertEqual(tokens[2].type, TokenType.IDENTIFIER)
+        self.assertEqual(tokens[2].value, "x")
+        self.assertEqual(tokens[3].type, TokenType.ARROW)
+        self.assertEqual(tokens[4].type, TokenType.IDENTIFIER)
+        self.assertEqual(tokens[4].value, "x")
+        self.assertEqual(tokens[5].type, TokenType.RPAREN)
+        self.assertEqual(tokens[6].type, TokenType.IDENTIFIER)
+        self.assertEqual(tokens[6].value, "y")
+        self.assertEqual(tokens[7].type, TokenType.EOF)
+
+if __name__ == "__main__":
     unittest.main()
