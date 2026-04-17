@@ -14,7 +14,6 @@ class Token:
     type: TokenType
     value: str
 
-
 def lex(text: str) -> list[Token]:
     tokens = []
     t = enumerate(text)

@@ -1,0 +1,53 @@
+import unittest
+from lexer import Token, TokenType
+from parser import parse
+
+
+class TestLexer(unittest.TestCase):
+    def test_parse_basic(self):
+        tokens = [
+            Token(type=TokenType.LPAREN, value="("),
+            Token(type=TokenType.LAMBDA, value="/"),
+            Token(type=TokenType.IDENTIFIER, value="x"),
+            Token(type=TokenType.ARROW, value="->"),
+            Token(type=TokenType.IDENTIFIER, value="x"),
+            Token(type=TokenType.RPAREN, value=")"),
+            Token(TokenType.IDENTIFIER, value="y"),
+            Token(type=TokenType.EOF, value="EOF"),
+        ]
+        AST = parse(tokens)
+
+        self.assertEqual(len(tokens), 3)
+        self.assertEqual(tokens[0].type, TokenType.LPAREN)
+        self.assertEqual(tokens[1].type, TokenType.RPAREN)
+        self.assertEqual(tokens[2].type, TokenType.EOF)
+
+    def test_lex_lambda(self):
+        tokens = lex("/x -> x")
+        self.assertEqual(len(tokens), 5)
+        self.assertEqual(tokens[0].type, TokenType.LAMBDA)
+        self.assertEqual(tokens[1].type, TokenType.IDENTIFIER)
+        self.assertEqual(tokens[1].value, "x")
+        self.assertEqual(tokens[2].type, TokenType.ARROW)
+        self.assertEqual(tokens[3].type, TokenType.IDENTIFIER)
+        self.assertEqual(tokens[3].value, "x")
+        self.assertEqual(tokens[4].type, TokenType.EOF)
+
+    def test_lex_lambda_application(self):
+        tokens = lex("(/x -> x) y")
+        self.assertEqual(len(tokens), 8)
+        self.assertEqual(tokens[0].type, TokenType.LPAREN)
+        self.assertEqual(tokens[1].type, TokenType.LAMBDA)
+        self.assertEqual(tokens[2].type, TokenType.IDENTIFIER)
+        self.assertEqual(tokens[2].value, "x")
+        self.assertEqual(tokens[3].type, TokenType.ARROW)
+        self.assertEqual(tokens[4].type, TokenType.IDENTIFIER)
+        self.assertEqual(tokens[4].value, "x")
+        self.assertEqual(tokens[5].type, TokenType.RPAREN)
+        self.assertEqual(tokens[6].type, TokenType.IDENTIFIER)
+        self.assertEqual(tokens[6].value, "y")
+        self.assertEqual(tokens[7].type, TokenType.EOF)
+
+
+if __name__ == "__main__":
+    unittest.main()
