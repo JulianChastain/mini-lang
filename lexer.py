@@ -38,7 +38,7 @@ def lex(text: str) -> list[Token]:
                         raise SyntaxError('Expected `>` after `-`, but encountered EOF')
                 case _ if char.isspace():
                     pass
-                case _ if char.isalnum():
+                case _ if char.isalpha() or char == '_':
                     name = char
                     while idx + 1 < len(text) and text[idx+1].isalnum():
                         name += next(t)[1]
@@ -49,5 +49,7 @@ def lex(text: str) -> list[Token]:
         except StopIteration:
             tokens.append(Token(TokenType.EOF, 'EOF'))
             return tokens 
+
+
                     
 
