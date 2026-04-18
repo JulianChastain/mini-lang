@@ -32,7 +32,7 @@ Expr = Var | Lam | App
 @dataclass
 class Parser:
     Input: list[Token]
-    Idx: int
+    Idx: int = 0
 
     def peek(self):
         return self.Input[self.Idx]
@@ -41,8 +41,8 @@ class Parser:
         self.Idx += 1
 
     def expect(self, v: TokenType):
-        val = self.Input[self.Idx].type == v
-        if not val:
+        val = self.Input[self.Idx]
+        if not val.type == v:
             raise SyntaxError(f"Expected {v} but got {self.Input[self.Idx].type}")
         self.incr()
         return val
@@ -50,6 +50,7 @@ class Parser:
     def parse_atom(self):
         nextv = self.peek()
         if nextv.type == TokenType.IDENTIFIER:
+            self.incr()
             return Var(nextv.value)
         if nextv.type == TokenType.LPAREN:
             self.incr()
@@ -59,12 +60,11 @@ class Parser:
         raise SyntaxError("Failed to parse atom")
 
     def parse_lam(self):
-        self.expect(TokenType.LPAREN)
-        self.expect(TokenType.IDENTIFIER)
-        param = self.parse_atom()
+        self.expect(TokenType.LAMBDA)
+        param = self.expect(TokenType.IDENTIFIER)
         self.expect(TokenType.ARROW)
         body = self.parse_expr()
-        return Lam(param, body)
+        return Lam(param.value, body)
 
     def parse_app(self):
         cur = self.parse_atom()
