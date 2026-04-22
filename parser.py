@@ -70,7 +70,7 @@ class Parser:
             return exprv
         if nextv.type == TokenType.INT:
             self.incr()
-            return IntLit(nextv.value)
+            return IntLit(int(nextv.value))
         raise SyntaxError("Failed to parse atom")
 
     def parse_lam(self):

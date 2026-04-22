@@ -1,6 +1,7 @@
 import unittest
+from lexer import lex
 from evaluator import eval, Closure
-from parser import Var, Lam, App
+from parser import Var, Lam, App, Parser
 
 class TestEvaluator(unittest.TestCase):
     def test_eval_var(self):
@@ -29,6 +30,14 @@ class TestEvaluator(unittest.TestCase):
         
         result = eval(expr, env)
         self.assertEqual(result, "lexical_value")
+
+class TestIntegration(unittest.TestCase):
+    def test_pipeline_identity_plus_one(self):
+        source = "(/x -> x + 1) 2"
+        tokens = lex(source)
+        ast = Parser(tokens)()
+        result = eval(ast, {})
+        self.assertEqual(result, 3)
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,4 @@
-from parser import Lam, Var, App, Expr
+from parser import Lam, Var, App, Expr, Add, IntLit
 from dataclasses import dataclass
 
 
@@ -24,5 +24,13 @@ def eval(e: Expr, env: dict[str, "Value"]):
                 raise TypeError(f"Can't call nonfunction {closure}")
             new_env = {**closure.env, closure.param: eval(arg, env)}
             return eval(closure.body, new_env)
+        case Add(lhs, rhs):
+            l = eval(lhs, env)
+            r = eval(rhs, env)
+            if not isinstance(l, int) or not isinstance(r, int):
+                raise TypeError(f"Cannot add non-integers: {l} + {r}")
+            return l + r
+        case IntLit(v):
+            return v
         case _:
             raise TypeError(f"Unknown ast node {e}")
