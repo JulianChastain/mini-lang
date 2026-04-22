@@ -1,6 +1,6 @@
 import unittest
-from lexer import Token, TokenType
-from parser import Parser, Var, Lam, App
+from lexer import Token, TokenType, lex
+from parser import Parser, Var, Lam, App, IntLit, Add
 
 
 class TestParser(unittest.TestCase):
@@ -46,6 +46,23 @@ class TestParser(unittest.TestCase):
         ]
         parser = Parser(tokens)
         self.assertEqual(parser(), App(App(Var("f"), Var("x")), Var("y")))
+
+
+class TestIntegration(unittest.TestCase):
+    def test_parse_int(self):
+        self.assertEqual(Parser(lex("42"))(), IntLit(42))
+
+    def test_parse_add(self):
+        self.assertEqual(Parser(lex("1 + 2"))(), Add(IntLit(1), IntLit(2)))
+
+    def test_parse_add_add(self):
+        self.assertEqual(Parser(lex("1 + 2 + 3"))(), Add(Add(IntLit(1), IntLit(2)), IntLit(3)))
+
+    def test_parse_app_add(self):
+        self.assertEqual(Parser(lex("f 1 + 2"))(), Add(App(Var("f"), IntLit(1)), IntLit(2)))
+
+    def test_parse_app_int(self):
+        self.assertEqual(Parser(lex("f 42"))(), App(Var("f"), IntLit(42)))
 
 
 if __name__ == "__main__":

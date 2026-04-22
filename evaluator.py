@@ -1,5 +1,4 @@
-from parser import Lam, Var, App
-from ast import Expr
+from parser import Lam, Var, App, Expr
 from dataclasses import dataclass
 
 

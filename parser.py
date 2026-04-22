@@ -9,24 +9,35 @@ from lexer import Token, TokenType
 # APP := atom atom*
 
 
-@dataclass
+@dataclass(frozen=True)
 class Var:
     name: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class Lam:
     param: str
     body: "Expr"
 
 
-@dataclass
+@dataclass(frozen=True)
 class App:
     func: "Expr"
     arg: "Expr"
 
 
-Expr = Var | Lam | App
+@dataclass(frozen=True)
+class IntLit:
+    value: int
+
+
+@dataclass(frozen=True)
+class Add:
+    lhs: "Expr"
+    rhs: "Expr"
+
+
+Expr = Var | Lam | App | IntLit | Add
 
 
 @dataclass
@@ -57,6 +68,9 @@ class Parser:
             exprv = self.parse_expr()
             self.expect(TokenType.RPAREN)
             return exprv
+        if nextv.type == TokenType.INT:
+            self.incr()
+            return IntLit(nextv.value)
         raise SyntaxError("Failed to parse atom")
 
     def parse_lam(self):
@@ -66,6 +80,13 @@ class Parser:
         body = self.parse_expr()
         return Lam(param.value, body)
 
+    def parse_addexpr(self):
+        lhs = self.parse_app()
+        while self.peek().type == TokenType.PLUS:
+            self.incr()
+            lhs = Add(lhs, self.parse_app())
+        return lhs
+
     def parse_app(self):
         cur = self.parse_atom()
         while True:
@@ -73,6 +94,7 @@ class Parser:
             if (
                 next_tok_type == TokenType.IDENTIFIER
                 or next_tok_type == TokenType.LPAREN
+                or next_tok_type == TokenType.INT
             ):
                 cur = App(cur, self.parse_atom())
             else:
@@ -82,7 +104,7 @@ class Parser:
         t = self.peek().type
         if t == TokenType.LAMBDA:
             return self.parse_lam()
-        return self.parse_app()
+        return self.parse_addexpr()
 
     def __call__(self):
         v = self.parse_expr()
