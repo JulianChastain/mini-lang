@@ -1,22 +1,16 @@
 # Next actions
 
-## Immediate: Evaluator
-Tree-walking, environment-based (not substitution-based).
+## Immediate: Polymorphism
+The simply-typed bidirectional checker works for `Int` and function types.
+Next step is extending it toward Dunfield & Krishnaswami (2013):
 
-- Environment is `dict[str, Value]`, immutable (copy on bind)
-- Values: closures (`Closure(param, body, env)`), that's it for now
-- `eval(expr: Expr, env: Env) -> Value`
-  - `Var`: lookup in env
-  - `Lam`: returns `Closure`
-  - `App`: eval function, eval arg, apply (extend closure's env with param=arg, eval body)
-- Tests: identity `(/x -> x) y` with y bound to something
-- Tests: constant `(/x -> /y -> x) a b` evaluates to `a`
-- Tests: application chain
+- Type variables and `forall` types in the Type AST
+- Ordered typing context with existential variables
+- Subtyping / instantiation judgments
+- Type annotations in the surface syntax so lambdas can be synthesized
 
-## After evaluator
-Switch to typing. Start with simple types (no polymorphism): build the
-Type AST, then implement `check` and `synth` for the bidirectional pair
-on the simply-typed lambda calculus. Then add polymorphism.
+## After polymorphism
+Algebraic data types and pattern matching.
 
 ## Known TODOs
-- Integration tests (source → tokens → ast)
+- Integration tests (source → tokens → ast → type → value)

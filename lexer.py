@@ -54,7 +54,9 @@ def lex(text: str) -> list[Token]:
                     pass
                 case _ if char.isalpha() or char == "_":
                     name = char
-                    while idx + 1 < len(text) and text[idx + 1].isalnum():
+                    while idx + 1 < len(text) and (
+                        text[idx + 1].isalnum() or text[idx + 1] == "_"
+                    ):
                         name += next(t)[1]
                         idx += 1
                     tokens.append(Token(TokenType.IDENTIFIER, name))

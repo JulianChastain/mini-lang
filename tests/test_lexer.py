@@ -35,5 +35,16 @@ class TestLexer(unittest.TestCase):
         self.assertEqual(tokens[6].value, "y")
         self.assertEqual(tokens[7].type, TokenType.EOF)
 
+    def test_lex_identifier_with_underscore(self):
+        tokens = lex("foo_bar _x x_1")
+        self.assertEqual(len(tokens), 4)
+        self.assertEqual(tokens[0].type, TokenType.IDENTIFIER)
+        self.assertEqual(tokens[0].value, "foo_bar")
+        self.assertEqual(tokens[1].type, TokenType.IDENTIFIER)
+        self.assertEqual(tokens[1].value, "_x")
+        self.assertEqual(tokens[2].type, TokenType.IDENTIFIER)
+        self.assertEqual(tokens[2].value, "x_1")
+        self.assertEqual(tokens[3].type, TokenType.EOF)
+
 if __name__ == "__main__":
     unittest.main()
