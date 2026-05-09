@@ -1,19 +1,18 @@
-from dataclasses import dataclass
-from parser import Expr, Var, Lam, App, IntLit, Add
+from lexer import lex
+from parser import (
+    Parser,
+    Expr,
+    Var,
+    Lam,
+    App,
+    IntLit,
+    Add,
+    Anno,
+    Type,
+    IntType,
+    FunType,
+)
 
-
-@dataclass(frozen=True)
-class IntType:
-    pass
-
-
-@dataclass(frozen=True)
-class FunType:
-    param: "Type"
-    result: "Type"
-
-
-Type = FunType | IntType
 Context = dict[str, Type]
 StaticInt = IntType()
 
@@ -36,6 +35,9 @@ def synth(expr: Expr, ctx: Context) -> Type:
                 raise TypeError(f"Trying to apply {fn} which isn't a function")
             check(arg, ctx, function_type.param)
             return function_type.result
+        case Anno(inner, annotated_type):
+            check(inner, ctx, annotated_type)
+            return annotated_type
         case Lam(_, _):
             raise TypeError(
                 f"Cannot synthesize type of lambda {expr}; Lambdas require context to typecheck"
@@ -61,3 +63,7 @@ def check(expr: Expr, ctx: Context, expected_type: Type):
         raise TypeError(
             f"Expected {expected_type} after synthing {expr} but got {final_attempt}"
         )
+
+
+def typecheck(src: str) -> Type:
+    return synth(Parser(lex(src))(), {})

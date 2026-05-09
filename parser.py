@@ -5,8 +5,36 @@ from lexer import Token, TokenType
 # Conceptual Structure
 # EXPR := LAMBDA | APP
 # LAMBDA := '/' IDENT '->' EXPR
-# ATOM := IDENT | '(' EXPR ')'
+# ATOM := IDENT | '(' EXPR (':' TYPE)? ')'
 # APP := atom atom*
+#
+# TYPE := 'forall' IDENT '.' TYPE | TATOM ('->' TYPE)?
+# TATOM := 'Int' | IDENT | '(' TYPE ')'
+
+
+@dataclass(frozen=True)
+class IntType:
+    pass
+
+
+@dataclass(frozen=True)
+class FunType:
+    param: "Type"
+    result: "Type"
+
+
+@dataclass(frozen=True)
+class TVar:
+    name: str
+
+
+@dataclass(frozen=True)
+class Forall:
+    var: str
+    body: "Type"
+
+
+Type = FunType | IntType | TVar | Forall
 
 
 @dataclass(frozen=True)
@@ -37,7 +65,13 @@ class Add:
     rhs: "Expr"
 
 
-Expr = Var | Lam | App | IntLit | Add
+@dataclass(frozen=True)
+class Anno:
+    expr: "Expr"
+    type: Type
+
+
+Expr = Var | Lam | App | IntLit | Add | Anno
 
 
 @dataclass
@@ -66,6 +100,9 @@ class Parser:
         if nextv.type == TokenType.LPAREN:
             self.incr()
             exprv = self.parse_expr()
+            if self.peek().type == TokenType.COLON:
+                self.incr()
+                exprv = Anno(exprv, self.parse_type())
             self.expect(TokenType.RPAREN)
             return exprv
         if nextv.type == TokenType.INT:
@@ -99,6 +136,33 @@ class Parser:
                 cur = App(cur, self.parse_atom())
             else:
                 return cur
+
+    def parse_type_atom(self):
+        nextv = self.peek()
+        if nextv.type == TokenType.INT_TYPE:
+            self.incr()
+            return IntType()
+        if nextv.type == TokenType.IDENTIFIER:
+            self.incr()
+            return TVar(nextv.value)
+        if nextv.type == TokenType.LPAREN:
+            self.incr()
+            typev = self.parse_type()
+            self.expect(TokenType.RPAREN)
+            return typev
+        raise SyntaxError("Failed to parse type atom")
+
+    def parse_type(self):
+        if self.peek().type == TokenType.FORALL:
+            self.incr()
+            var = self.expect(TokenType.IDENTIFIER)
+            self.expect(TokenType.DOT)
+            return Forall(var.value, self.parse_type())
+        param = self.parse_type_atom()
+        if self.peek().type == TokenType.ARROW:
+            self.incr()
+            return FunType(param, self.parse_type())
+        return param
 
     def parse_expr(self):
         t = self.peek().type

@@ -45,6 +45,9 @@ class TestIntegration(unittest.TestCase):
         result = eval(Parser(lex(source))(), {})
         self.assertEqual(result, 4)
 
+    def test_eval_erases_annotation(self):
+        self.assertEqual(eval(Parser(lex("((/x -> x + 1) : Int -> Int) 2"))(), {}), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

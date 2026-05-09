@@ -10,7 +10,14 @@ class TokenType(Enum):
     IDENTIFIER = auto()
     INT = auto()
     PLUS = auto()
+    COLON = auto()
+    DOT = auto()
+    FORALL = auto()
+    INT_TYPE = auto()
     EOF = auto()
+
+
+KEYWORDS = {"forall": TokenType.FORALL, "Int": TokenType.INT_TYPE}
 
 
 @dataclass
@@ -34,6 +41,10 @@ def lex(text: str) -> list[Token]:
                     tokens.append(Token(TokenType.LAMBDA, char))
                 case "+":
                     tokens.append(Token(TokenType.PLUS, "+"))
+                case ":":
+                    tokens.append(Token(TokenType.COLON, char))
+                case ".":
+                    tokens.append(Token(TokenType.DOT, char))
                 case "-":
                     try:
                         next_idx, next_char = next(t)
@@ -59,7 +70,9 @@ def lex(text: str) -> list[Token]:
                     ):
                         name += next(t)[1]
                         idx += 1
-                    tokens.append(Token(TokenType.IDENTIFIER, name))
+                    tokens.append(
+                        Token(KEYWORDS.get(name, TokenType.IDENTIFIER), name)
+                    )
                 case _:
                     raise SyntaxError(
                         f"Unexpected character {char}. Don't know how to process it"

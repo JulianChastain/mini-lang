@@ -4,10 +4,11 @@
 The simply-typed bidirectional checker works for `Int` and function types.
 Next step is extending it toward Dunfield & Krishnaswami (2013):
 
-- Type variables and `forall` types in the Type AST
+- [x] Type variables and `forall` types in the Type AST
+- [x] Type annotations in the surface syntax so lambdas can be synthesized
 - Ordered typing context with existential variables
-- Subtyping / instantiation judgments
-- Type annotations in the surface syntax so lambdas can be synthesized
+- Subtyping / instantiation judgments (the checker currently compares types
+  structurally, so `forall` annotations parse but don't check yet)
 
 ## After polymorphism
 Algebraic data types and pattern matching.

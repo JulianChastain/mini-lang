@@ -46,5 +46,38 @@ class TestLexer(unittest.TestCase):
         self.assertEqual(tokens[2].value, "x_1")
         self.assertEqual(tokens[3].type, TokenType.EOF)
 
+    def test_lex_annotation(self):
+        tokens = lex("(x : Int)")
+        self.assertEqual(
+            [t.type for t in tokens],
+            [
+                TokenType.LPAREN,
+                TokenType.IDENTIFIER,
+                TokenType.COLON,
+                TokenType.INT_TYPE,
+                TokenType.RPAREN,
+                TokenType.EOF,
+            ],
+        )
+
+    def test_lex_forall(self):
+        tokens = lex("forall a. a")
+        self.assertEqual(
+            [t.type for t in tokens],
+            [
+                TokenType.FORALL,
+                TokenType.IDENTIFIER,
+                TokenType.DOT,
+                TokenType.IDENTIFIER,
+                TokenType.EOF,
+            ],
+        )
+
+    def test_lex_keyword_prefix_is_identifier(self):
+        tokens = lex("Integer foralls")
+        self.assertEqual(tokens[0].type, TokenType.IDENTIFIER)
+        self.assertEqual(tokens[1].type, TokenType.IDENTIFIER)
+
+
 if __name__ == "__main__":
     unittest.main()

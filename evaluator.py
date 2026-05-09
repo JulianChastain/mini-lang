@@ -1,4 +1,4 @@
-from parser import Lam, Var, App, Expr, Add, IntLit
+from parser import Lam, Var, App, Expr, Add, IntLit, Anno
 from dataclasses import dataclass
 
 
@@ -32,5 +32,7 @@ def eval(e: Expr, env: dict[str, "Value"]):
             return l + r
         case IntLit(v):
             return v
+        case Anno(inner, _):
+            return eval(inner, env)
         case _:
             raise TypeError(f"Unknown ast node {e}")
