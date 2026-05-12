@@ -11,6 +11,7 @@ Work in progress. Currently implemented:
 - Tree-walking, environment-based evaluator
 - Bidirectional typechecker (`check` / `synth`) for the simply-typed lambda calculus with `Int`
 - Type annotations `(e : T)` and a `typecheck(src)` entry point
+- Immutable ordered typing context with existential variables, the groundwork for polymorphism
 
 ## Roadmap
 

@@ -6,7 +6,7 @@ Next step is extending it toward Dunfield & Krishnaswami (2013):
 
 - [x] Type variables and `forall` types in the Type AST
 - [x] Type annotations in the surface syntax so lambdas can be synthesized
-- Ordered typing context with existential variables
+- [x] Ordered typing context with existential variables (`context.py`)
 - Subtyping / instantiation judgments (the checker currently compares types
   structurally, so `forall` annotations parse but don't check yet)
 

@@ -34,7 +34,14 @@ class Forall:
     body: "Type"
 
 
-Type = FunType | IntType | TVar | Forall
+# Existential type variable (α̂). Never produced by the parser; the
+# typechecker creates these as placeholders for types it hasn't solved yet.
+@dataclass(frozen=True)
+class Exists:
+    name: str
+
+
+Type = FunType | IntType | TVar | Forall | Exists
 
 
 @dataclass(frozen=True)

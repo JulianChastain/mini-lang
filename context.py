@@ -1,0 +1,249 @@
+# Types and the ordered typing context from Dunfield & Krishnaswami (2013).
+#
+# The context is immutable: every operation takes Γ and returns a new Δ,
+# mirroring the paper's Γ ⊢ ... ⊣ Δ judgments. The algorithm never
+# backtracks, so there's no need to undo anything.
+from dataclasses import dataclass
+from itertools import count
+from parser import Type, IntType, FunType, TVar, Forall, Exists
+
+
+# ---------------------------------------------------------------------------
+# Operations on types
+# ---------------------------------------------------------------------------
+
+
+def is_monotype(t: Type) -> bool:
+    """Monotypes (τ) are types with no `forall` anywhere inside them."""
+    match t:
+        case IntType() | TVar(_) | Exists(_):
+            return True
+        case FunType(param, result):
+            return is_monotype(param) and is_monotype(result)
+        case Forall(_, _):
+            return False
+
+
+def occurs(name: str, t: Type) -> bool:
+    """Whether the existential α̂ named `name` appears free in `t`."""
+    match t:
+        case Exists(n):
+            return n == name
+        case IntType() | TVar(_):
+            return False
+        case FunType(param, result):
+            return occurs(name, param) or occurs(name, result)
+        case Forall(_, body):
+            return occurs(name, body)
+
+
+def substitute(t: Type, name: str, replacement: Type) -> Type:
+    """[replacement/name]t: replace the type variable `name` in `t`.
+
+    Stops at a `forall` that rebinds `name`. Doesn't rename to avoid capture;
+    the checker only ever substitutes existentials or fresh type variables.
+    """
+    match t:
+        case TVar(n):
+            return replacement if n == name else t
+        case IntType() | Exists(_):
+            return t
+        case FunType(param, result):
+            return FunType(
+                substitute(param, name, replacement),
+                substitute(result, name, replacement),
+            )
+        case Forall(var, body):
+            if var == name:
+                return t
+            return Forall(var, substitute(body, name, replacement))
+
+
+def show_type(t: Type) -> str:
+    """Print a type in surface syntax, with existentials written as `^a`."""
+    match t:
+        case IntType():
+            return "Int"
+        case TVar(n):
+            return n
+        case Exists(n):
+            return f"^{n}"
+        case FunType(param, result):
+            # `->` is right-associative and `forall` extends as far right as
+            # possible, so only the left side ever needs parentheses.
+            lhs = show_type(param)
+            if isinstance(param, (FunType, Forall)):
+                lhs = f"({lhs})"
+            return f"{lhs} -> {show_type(result)}"
+        case Forall(var, body):
+            return f"forall {var}. {show_type(body)}"
+
+
+_fresh_counter = count()
+
+
+def fresh(base: str = "a") -> str:
+    """A name that has never been handed out before.
+
+    The `'` can't appear in a source identifier, so fresh names never
+    collide with user-written type variables. A base that is itself a fresh
+    name is trimmed back to its root, so `a'3` gives `a'7`, not `a'3'7`.
+    """
+    return f"{base.split("'")[0]}'{next(_fresh_counter)}"
+
+
+# ---------------------------------------------------------------------------
+# Context entries
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CVar:
+    """x : A"""
+
+    name: str
+    type: Type
+
+
+@dataclass(frozen=True)
+class CTVar:
+    """α"""
+
+    name: str
+
+
+@dataclass(frozen=True)
+class CExists:
+    """α̂ (unsolved)"""
+
+    name: str
+
+
+@dataclass(frozen=True)
+class CSolved:
+    """α̂ = τ"""
+
+    name: str
+    type: Type
+
+
+@dataclass(frozen=True)
+class CMarker:
+    """▶α̂, marks where a scope of existentials begins"""
+
+    name: str
+
+
+Entry = CVar | CTVar | CExists | CSolved | CMarker
+
+
+def show_entry(entry: Entry) -> str:
+    match entry:
+        case CVar(name, t):
+            return f"{name} : {show_type(t)}"
+        case CTVar(name):
+            return name
+        case CExists(name):
+            return f"^{name}"
+        case CSolved(name, t):
+            return f"^{name} = {show_type(t)}"
+        case CMarker(name):
+            return f"|>^{name}"
+
+
+# ---------------------------------------------------------------------------
+# The ordered context
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Context:
+    entries: tuple[Entry, ...] = ()
+
+    def __str__(self) -> str:
+        return ", ".join(show_entry(e) for e in self.entries)
+
+    def extend(self, *entries: Entry) -> "Context":
+        """Γ, entries"""
+        return Context(self.entries + entries)
+
+    def _index(self, entry: Entry) -> int:
+        try:
+            return self.entries.index(entry)
+        except ValueError:
+            raise TypeError(f"{show_entry(entry)} is not in context [{self}]")
+
+    def drop(self, entry: Entry) -> "Context":
+        """Γ, entry, Θ  becomes  Γ. Used to leave a scope."""
+        return Context(self.entries[: self._index(entry)])
+
+    def replace(self, entry: Entry, *new_entries: Entry) -> "Context":
+        """Γ[entry]  becomes  Γ[new_entries], keeping everything else in place."""
+        i = self._index(entry)
+        return Context(self.entries[:i] + new_entries + self.entries[i + 1 :])
+
+    def lookup(self, name: str) -> Type | None:
+        """The type of term variable `name`; the rightmost binding wins."""
+        for entry in reversed(self.entries):
+            if isinstance(entry, CVar) and entry.name == name:
+                return entry.type
+        return None
+
+    def has_tvar(self, name: str) -> bool:
+        return CTVar(name) in self.entries
+
+    def has_exists(self, name: str) -> bool:
+        """Whether α̂ is declared, solved or not."""
+        return any(
+            isinstance(e, (CExists, CSolved)) and e.name == name
+            for e in self.entries
+        )
+
+    def solution(self, name: str) -> Type | None:
+        """τ if α̂ = τ is in the context, None if α̂ is unsolved or absent."""
+        for entry in self.entries:
+            if isinstance(entry, CSolved) and entry.name == name:
+                return entry.type
+        return None
+
+    def apply(self, t: Type) -> Type:
+        """[Γ]A: replace every solved existential in `t` with its solution."""
+        match t:
+            case Exists(name):
+                solved = self.solution(name)
+                return t if solved is None else self.apply(solved)
+            case IntType() | TVar(_):
+                return t
+            case FunType(param, result):
+                return FunType(self.apply(param), self.apply(result))
+            case Forall(var, body):
+                return Forall(var, self.apply(body))
+
+    def well_formed(self, t: Type) -> bool:
+        """Γ ⊢ A: every variable in `t` is bound by the context or a forall."""
+        match t:
+            case IntType():
+                return True
+            case TVar(name):
+                return self.has_tvar(name)
+            case Exists(name):
+                return self.has_exists(name)
+            case FunType(param, result):
+                return self.well_formed(param) and self.well_formed(result)
+            case Forall(var, body):
+                return self.extend(CTVar(var)).well_formed(body)
+
+    def split_arrow(self, name: str) -> tuple["Context", Exists, Exists]:
+        """Γ[α̂]  becomes  Γ[α̂₂, α̂₁, α̂ = α̂₁ → α̂₂].
+
+        Returns the new context with α̂₁ and α̂₂. Used by the instantiation
+        rules when α̂ has to become a function type.
+        """
+        a1, a2 = Exists(fresh(name)), Exists(fresh(name))
+        ctx = self.replace(
+            CExists(name),
+            CExists(a2.name),
+            CExists(a1.name),
+            CSolved(name, FunType(a1, a2)),
+        )
+        return ctx, a1, a2
