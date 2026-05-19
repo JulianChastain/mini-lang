@@ -63,11 +63,6 @@ class TestInstL(unittest.TestCase):
         delta = inst_l(ctx, "a", Forall("b", INT))
         self.assertEqual(delta.entries, (CTVar("b"), CSolved("a", INT)))
 
-    def test_occurs_check(self):
-        ctx = Context().extend(CExists("a"))
-        with self.assertRaises(TypeError):
-            inst_l(ctx, "a", FunType(Exists("a"), INT))
-
     def test_out_of_scope_type_variable(self):
         ctx = Context().extend(CExists("a"), CTVar("b"))
         with self.assertRaises(TypeError):
@@ -127,11 +122,6 @@ class TestInstR(unittest.TestCase):
         ctx = Context().extend(CExists("a"))
         with self.assertRaises(TypeError):
             inst_r(ctx, FunType(Forall("b", TVar("b")), INT), "a")
-
-    def test_occurs_check(self):
-        ctx = Context().extend(CExists("a"))
-        with self.assertRaises(TypeError):
-            inst_r(ctx, FunType(INT, Exists("a")), "a")
 
 
 if __name__ == "__main__":

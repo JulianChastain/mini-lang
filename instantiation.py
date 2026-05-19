@@ -3,7 +3,8 @@
 #   inst_l:  Γ ⊢ α̂ :≤= A ⊣ Δ   instantiate α̂ so that α̂ <: A
 #   inst_r:  Γ ⊢ A =≤: α̂ ⊣ Δ   instantiate α̂ so that A <: α̂
 #
-# Both expect A to already have Γ applied to it, and α̂ to be unsolved in Γ.
+# Both expect A to already have Γ applied to it, α̂ to be unsolved in Γ, and
+# α̂ not to occur in A. Subtyping does that occurs check before calling in.
 from parser import Type, FunType, Forall, Exists, TVar
 from context import (
     Context,
@@ -12,7 +13,6 @@ from context import (
     CTVar,
     CMarker,
     is_monotype,
-    occurs,
     substitute,
     show_type,
     fresh,
@@ -44,16 +44,14 @@ def _reach(ctx: Context, name: str, other: str) -> Context:
     return ctx.replace(CExists(other), CSolved(other, Exists(name)))
 
 
-def _check_occurs(ctx: Context, name: str, t: Type):
+def _check_unsolved(ctx: Context, name: str):
     if CExists(name) not in ctx.entries:
         raise TypeError(f"^{name} is not an unsolved existential in [{ctx}]")
-    if occurs(name, t):
-        raise TypeError(f"Occurs check: ^{name} appears in {show_type(t)}")
 
 
 def inst_l(ctx: Context, name: str, t: Type) -> Context:
     """Γ ⊢ α̂ :≤= A ⊣ Δ"""
-    _check_occurs(ctx, name, t)
+    _check_unsolved(ctx, name)
     solved = _try_solve(ctx, name, t)
     if solved is not None:
         return solved
@@ -77,7 +75,7 @@ def inst_l(ctx: Context, name: str, t: Type) -> Context:
 
 def inst_r(ctx: Context, t: Type, name: str) -> Context:
     """Γ ⊢ A =≤: α̂ ⊣ Δ"""
-    _check_occurs(ctx, name, t)
+    _check_unsolved(ctx, name)
     solved = _try_solve(ctx, name, t)
     if solved is not None:
         return solved
