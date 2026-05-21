@@ -1,20 +1,14 @@
 # Next actions
 
-## Immediate: Polymorphism
-The simply-typed bidirectional checker works for `Int` and function types.
-Next step is extending it toward Dunfield & Krishnaswami (2013):
+## Done: Polymorphism
+The checker follows Dunfield & Krishnaswami (2013): ordered context with
+existential variables (`context.py`), instantiation (`instantiation.py`),
+subtyping (`subtyping.py`), and the typing rules (`type_checker.py`).
+Unannotated lambdas synthesize via →I⇒; there's no let-generalization, so
+leftover existentials show up in the result type (e.g. `/x -> x` gives
+`^a -> ^a`).
 
-- [x] Type variables and `forall` types in the Type AST
-- [x] Type annotations in the surface syntax so lambdas can be synthesized
-- [x] Ordered typing context with existential variables (`context.py`)
-- [x] Instantiation judgments (`instantiation.py`)
-- [x] Subtyping (`subtyping.py`)
-- Wire the context, instantiation, and subtyping into `check` / `synth` (the
-  checker still compares types structurally, so `forall` annotations parse
-  but don't check yet)
-
-## After polymorphism
-Algebraic data types and pattern matching.
+## Next: Algebraic data types and pattern matching
 
 ## Known TODOs
 - Integration tests (source → tokens → ast → type → value)

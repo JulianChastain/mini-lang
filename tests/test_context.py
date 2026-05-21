@@ -134,6 +134,10 @@ class TestContext(unittest.TestCase):
         self.assertEqual(ctx.drop(CMarker("a")).entries, (CVar("x", INT),))
         self.assertEqual(len(ctx.entries), 4)
 
+    def test_drop_shadowed_entry_drops_innermost(self):
+        ctx = Context().extend(CVar("x", INT), CVar("x", INT))
+        self.assertEqual(ctx.drop(CVar("x", INT)).entries, (CVar("x", INT),))
+
     def test_drop_missing_entry_fails(self):
         with self.assertRaises(TypeError):
             Context().drop(CTVar("a"))

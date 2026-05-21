@@ -168,10 +168,12 @@ class Context:
         return Context(self.entries + entries)
 
     def _index(self, entry: Entry) -> int:
-        try:
-            return self.entries.index(entry)
-        except ValueError:
-            raise TypeError(f"{show_entry(entry)} is not in context [{self}]")
+        """Position of the rightmost `entry`, the innermost scope if it's
+        shadowed (e.g. the second `x : Int` in `/x -> /x -> x`)."""
+        for i in range(len(self.entries) - 1, -1, -1):
+            if self.entries[i] == entry:
+                return i
+        raise TypeError(f"{show_entry(entry)} is not in context [{self}]")
 
     def drop(self, entry: Entry) -> "Context":
         """Γ, entry, Θ  becomes  Γ. Used to leave a scope."""
