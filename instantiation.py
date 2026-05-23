@@ -17,6 +17,7 @@ from context import (
     show_type,
     fresh,
 )
+from errors import TypeCheckError
 
 
 def _try_solve(ctx: Context, name: str, t: Type) -> Context | None:
@@ -30,7 +31,7 @@ def _try_solve(ctx: Context, name: str, t: Type) -> Context | None:
     return None
 
 
-def _reach(ctx: Context, name: str, other: str) -> Context:
+def _reach(ctx: Context, name: str, other: str, rule: str) -> Context:
     """InstLReach / InstRReach: Γ[α̂][β̂] becomes Γ[α̂][β̂ = α̂].
 
     β̂ must come after α̂, otherwise Solve would have applied instead.
@@ -40,24 +41,36 @@ def _reach(ctx: Context, name: str, other: str) -> Context:
         CExists(other) not in entries
         or entries.index(CExists(other)) < entries.index(CExists(name))
     ):
-        raise TypeError(f"Cannot instantiate ^{name} to ^{other} in [{ctx}]")
+        raise TypeCheckError(
+            rule, f"cannot instantiate ^{name} to ^{other} in [{ctx}]"
+        )
     return ctx.replace(CExists(other), CSolved(other, Exists(name)))
 
 
-def _check_unsolved(ctx: Context, name: str):
+def _check_unsolved(ctx: Context, name: str, rule: str):
     if CExists(name) not in ctx.entries:
-        raise TypeError(f"^{name} is not an unsolved existential in [{ctx}]")
+        raise TypeCheckError(rule, f"^{name} is not an unsolved existential in [{ctx}]")
+
+
+def _out_of_scope(ctx: Context, name: str, t: Type, rule: str):
+    # Solve was the only rule left, and it needs t to be well-formed to the
+    # left of α̂. A rigid type variable introduced later can't escape there.
+    raise TypeCheckError(
+        rule,
+        f"cannot solve ^{name} := {show_type(t)}: {show_type(t)} is not in scope"
+        f" where ^{name} was introduced",
+    )
 
 
 def inst_l(ctx: Context, name: str, t: Type) -> Context:
     """Γ ⊢ α̂ :≤= A ⊣ Δ"""
-    _check_unsolved(ctx, name)
+    _check_unsolved(ctx, name, "InstLSolve")
     solved = _try_solve(ctx, name, t)
     if solved is not None:
         return solved
     match t:
         case Exists(other):
-            return _reach(ctx, name, other)
+            return _reach(ctx, name, other, "InstLReach")
         case FunType(param, result):
             # InstLArr: the parameter flips direction (contravariance).
             ctx, a1, a2 = ctx.split_arrow(name)
@@ -70,18 +83,18 @@ def inst_l(ctx: Context, name: str, t: Type) -> Context:
             ctx = ctx.extend(CTVar(beta))
             delta = inst_l(ctx, name, substitute(body, var, TVar(beta)))
             return delta.drop(CTVar(beta))
-    raise TypeError(f"Cannot instantiate ^{name} to {show_type(t)} in [{ctx}]")
+    _out_of_scope(ctx, name, t, "InstLSolve")
 
 
 def inst_r(ctx: Context, t: Type, name: str) -> Context:
     """Γ ⊢ A =≤: α̂ ⊣ Δ"""
-    _check_unsolved(ctx, name)
+    _check_unsolved(ctx, name, "InstRSolve")
     solved = _try_solve(ctx, name, t)
     if solved is not None:
         return solved
     match t:
         case Exists(other):
-            return _reach(ctx, name, other)
+            return _reach(ctx, name, other, "InstRReach")
         case FunType(param, result):
             # InstRArr
             ctx, a1, a2 = ctx.split_arrow(name)
@@ -94,4 +107,4 @@ def inst_r(ctx: Context, t: Type, name: str) -> Context:
             ctx = ctx.extend(CMarker(beta), CExists(beta))
             delta = inst_r(ctx, substitute(body, var, Exists(beta)), name)
             return delta.drop(CMarker(beta))
-    raise TypeError(f"Cannot instantiate ^{name} to {show_type(t)} in [{ctx}]")
+    _out_of_scope(ctx, name, t, "InstRSolve")

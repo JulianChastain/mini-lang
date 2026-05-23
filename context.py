@@ -75,11 +75,23 @@ def show_type(t: Type) -> str:
             if isinstance(param, (FunType, Forall)):
                 lhs = f"({lhs})"
             return f"{lhs} -> {show_type(result)}"
-        case Forall(var, body):
-            return f"forall {var}. {show_type(body)}"
+        case Forall(_, _):
+            # Nested foralls print as one binder list: forall a b. ...
+            names = []
+            while isinstance(t, Forall):
+                names.append(t.var)
+                t = t.body
+            return f"forall {' '.join(names)}. {show_type(t)}"
 
 
 _fresh_counter = count()
+
+
+def reset_fresh():
+    """Restart fresh names from 0, so each program gets small, repeatable
+    names in its error messages. Only safe between independent checks."""
+    global _fresh_counter
+    _fresh_counter = count()
 
 
 def fresh(base: str = "a") -> str:

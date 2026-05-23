@@ -5,6 +5,7 @@
 #   app_synth:  Γ ⊢ A • e ⇒⇒ C ⊣ Δ   (applying a function of type A to e)
 #
 # Each takes the input context Γ and returns the output context Δ.
+from itertools import count
 from lexer import lex
 from parser import (
     Parser,
@@ -22,10 +23,42 @@ from parser import (
     Forall,
     Exists,
 )
-from context import Context, CVar, CTVar, CExists, substitute, show_type, fresh
+from context import (
+    Context,
+    CVar,
+    CTVar,
+    CExists,
+    substitute,
+    show_type,
+    fresh,
+    reset_fresh,
+)
+from errors import TypeCheckError, rule_frame
 from subtyping import subtype
 
 StaticInt = IntType()
+
+
+def show_expr(expr: Expr, prec: int = 0) -> str:
+    """Print an expression in surface syntax with minimal parentheses.
+
+    Precedence, loosest first: lambda (0), `+` (1), application (2), atom (3).
+    """
+    match expr:
+        case Var(name):
+            return name
+        case IntLit(value):
+            return str(value)
+        case Anno(inner, t):
+            # A bare lambda would parse here too, but reads ambiguously.
+            return f"({show_expr(inner, 1)} : {show_type(t)})"
+        case Lam(param, body):
+            s, own = f"/{param} -> {show_expr(body)}", 0
+        case Add(lhs, rhs):
+            s, own = f"{show_expr(lhs, 1)} + {show_expr(rhs, 2)}", 1
+        case App(fn, arg):
+            s, own = f"{show_expr(fn, 2)} {show_expr(arg, 3)}", 2
+    return f"({s})" if prec > own else s
 
 
 def _rename_tvar(expr: Expr, name: str, new_name: str) -> Expr:
@@ -57,7 +90,7 @@ def synth(ctx: Context, expr: Expr) -> tuple[Type, Context]:
             # Var
             found = ctx.lookup(name)
             if found is None:
-                raise TypeError(f"Unbound Variable: {name}")
+                raise TypeCheckError("Var", f"unbound variable {name}")
             return found, ctx
         case IntLit(_):
             # 1I⇒
@@ -69,27 +102,31 @@ def synth(ctx: Context, expr: Expr) -> tuple[Type, Context]:
         case Anno(inner, annotated_type):
             # Anno
             if not ctx.well_formed(annotated_type):
-                raise TypeError(
-                    f"Annotation {show_type(annotated_type)} is not well-formed in [{ctx}]"
+                raise TypeCheckError(
+                    "Anno",
+                    f"annotation {show_type(annotated_type)} mentions a type"
+                    " variable that isn't in scope",
                 )
             return annotated_type, check(ctx, inner, annotated_type)
         case Lam(param, body):
             # →I⇒: guess α̂ → β̂ and check the body. α̂ and β̂ stay in Δ so
-            # the caller can see what they were solved to; there's no
-            # let-generalization.
+            # the caller can see what they were solved to; typecheck()
+            # generalizes whatever is still unsolved at the very end.
             a, b = Exists(fresh("a")), Exists(fresh("b"))
-            ctx = ctx.extend(CExists(a.name), CExists(b.name), CVar(param, a))
-            delta = check(ctx, body, b).drop(CVar(param, a))
+            with rule_frame("→I⇒", f"inferring the type of {show_expr(expr)}"):
+                ctx = ctx.extend(CExists(a.name), CExists(b.name), CVar(param, a))
+                delta = check(ctx, body, b).drop(CVar(param, a))
             return FunType(a, b), delta
         case App(fn, arg):
             # →E
             fn_type, theta = synth(ctx, fn)
             return app_synth(theta, theta.apply(fn_type), arg)
-    raise TypeError(f"Tried to synthesize the type of {expr}, which is not valid")
+    raise TypeCheckError("Sub", f"cannot synthesize a type for {expr}")
 
 
 def check(ctx: Context, expr: Expr, expected_type: Type) -> Context:
     """Γ ⊢ e ⇐ A ⊣ Δ"""
+    judgment = f"checking {show_expr(expr)} against {show_type(ctx.apply(expected_type))}"
     match expr, expected_type:
         case IntLit(_), IntType():
             # 1I
@@ -102,14 +139,17 @@ def check(ctx: Context, expr: Expr, expected_type: Type) -> Context:
                 expr = _rename_tvar(expr, var, renamed)
                 body = substitute(body, var, TVar(renamed))
                 var = renamed
-            return check(ctx.extend(CTVar(var)), expr, body).drop(CTVar(var))
+            with rule_frame("∀I", judgment):
+                return check(ctx.extend(CTVar(var)), expr, body).drop(CTVar(var))
         case Lam(param, body), FunType(param_type, result_type):
             # →I
-            ctx = ctx.extend(CVar(param, param_type))
-            return check(ctx, body, result_type).drop(CVar(param, param_type))
+            with rule_frame("→I", judgment):
+                ctx = ctx.extend(CVar(param, param_type))
+                return check(ctx, body, result_type).drop(CVar(param, param_type))
     # Sub
-    synthed, theta = synth(ctx, expr)
-    return subtype(theta, theta.apply(synthed), theta.apply(expected_type))
+    with rule_frame("Sub", judgment):
+        synthed, theta = synth(ctx, expr)
+        return subtype(theta, theta.apply(synthed), theta.apply(expected_type))
 
 
 def app_synth(ctx: Context, fn_type: Type, arg: Expr) -> tuple[Type, Context]:
@@ -126,10 +166,89 @@ def app_synth(ctx: Context, fn_type: Type, arg: Expr) -> tuple[Type, Context]:
             return a2, check(ctx, arg, a1)
         case FunType(param, result):
             # →App
-            return result, check(ctx, arg, param)
-    raise TypeError(f"Trying to apply a value of type {show_type(fn_type)}")
+            with rule_frame(
+                "→App",
+                f"applying a function of type {show_type(fn_type)} to {show_expr(arg)}",
+            ):
+                return result, check(ctx, arg, param)
+    raise TypeCheckError(
+        "→App",
+        f"cannot apply a value of type {show_type(fn_type)} to {show_expr(arg)}:"
+        " it isn't a function",
+    )
+
+
+def _exists_in(t: Type) -> list[str]:
+    """Existentials in `t`, in order of first appearance, without repeats."""
+    match t:
+        case Exists(name):
+            return [name]
+        case FunType(param, result):
+            return list(dict.fromkeys(_exists_in(param) + _exists_in(result)))
+        case Forall(_, body):
+            return _exists_in(body)
+    return []
+
+
+def _tvars_in(t: Type) -> set[str]:
+    match t:
+        case TVar(name):
+            return {name}
+        case FunType(param, result):
+            return _tvars_in(param) | _tvars_in(result)
+        case Forall(var, body):
+            return {var} | _tvars_in(body)
+    return set()
+
+
+def _type_var_names():
+    """a, b, ..., z, a1, b1, ..."""
+    for n in count():
+        for c in "abcdefghijklmnopqrstuvwxyz":
+            yield c if n == 0 else f"{c}{n}"
+
+
+def generalize(ctx: Context, t: Type) -> Type:
+    """Close over the existentials still unsolved after checking a program.
+
+    The program was checked in an empty context, so nothing outside it can
+    constrain them: `/x -> x` synthesizes ^a -> ^a, which generalizes to
+    forall a. a -> a. Names are picked in order of appearance, skipping any
+    already used by the type.
+    """
+    t = ctx.apply(t)
+    taken = _tvars_in(t)
+    names = (n for n in _type_var_names() if n not in taken)
+    chosen = []
+    for ex in _exists_in(t):
+        name = next(names)
+        chosen.append(name)
+        t = _replace_exists(t, ex, TVar(name))
+    for name in reversed(chosen):
+        t = Forall(name, t)
+    return t
+
+
+def _replace_exists(t: Type, name: str, replacement: Type) -> Type:
+    match t:
+        case Exists(n) if n == name:
+            return replacement
+        case FunType(param, result):
+            return FunType(
+                _replace_exists(param, name, replacement),
+                _replace_exists(result, name, replacement),
+            )
+        case Forall(var, body):
+            return Forall(var, _replace_exists(body, name, replacement))
+    return t
+
+
+def typecheck_expr(expr: Expr) -> Type:
+    """Synthesize the type of a whole program, generalized."""
+    reset_fresh()
+    t, ctx = synth(Context(), expr)
+    return generalize(ctx, t)
 
 
 def typecheck(src: str) -> Type:
-    t, ctx = synth(Context(), Parser(lex(src))())
-    return ctx.apply(t)
+    return typecheck_expr(Parser(lex(src))())

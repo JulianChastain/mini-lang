@@ -62,6 +62,10 @@ class TestTypeOperations(unittest.TestCase):
             show_type(FunType(Forall("a", TVar("a")), INT)), "(forall a. a) -> Int"
         )
 
+    def test_show_type_collapses_nested_foralls(self):
+        t = Forall("a", Forall("b", FunType(TVar("a"), TVar("b"))))
+        self.assertEqual(show_type(t), "forall a b. a -> b")
+
     def test_show_type_round_trips_through_parser(self):
         for src in [
             "Int",

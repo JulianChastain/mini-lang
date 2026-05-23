@@ -1,5 +1,7 @@
 import unittest
-from type_checker import synth, check, app_synth, typecheck, IntType, FunType
+from type_checker import synth, check, app_synth, typecheck, show_expr, IntType, FunType
+from lexer import lex
+from parser import Parser
 from parser import IntLit, Add, Lam, Var, Anno, TVar, Forall, Exists
 from context import Context, CVar, CTVar, CExists
 
@@ -98,6 +100,21 @@ class TestTypeChecker(unittest.TestCase):
             app_synth(Context(), INT, IntLit(1))
 
 
+class TestShowExpr(unittest.TestCase):
+    def test_round_trips_through_parser(self):
+        for src in [
+            "/x -> x + 1",
+            "(/x -> x) y",
+            "f x (g y)",
+            "1 + (2 + 3)",
+            "(/x -> x) + 1",
+            "((/x -> x) : forall a. a -> a) 1",
+        ]:
+            expr = Parser(lex(src))()
+            self.assertEqual(Parser(lex(show_expr(expr)))(), expr)
+            self.assertEqual(show_expr(expr), src)
+
+
 class TestTypecheckSource(unittest.TestCase):
     def test_annotated_lambda_applied(self):
         self.assertEqual(typecheck("((/x -> x + 1) : Int -> Int) 2"), INT)
@@ -111,10 +128,10 @@ class TestTypecheckSource(unittest.TestCase):
         # →I⇒ lets unannotated lambdas synthesize
         self.assertEqual(typecheck("(/x -> x + 1) 2"), INT)
 
-    def test_unannotated_identity(self):
-        t = typecheck("/x -> x")
-        self.assertIsInstance(t.param, Exists)
-        self.assertEqual(t.param, t.result)
+    def test_unannotated_identity_is_generalized(self):
+        self.assertEqual(
+            typecheck("/x -> x"), Forall("a", FunType(TVar("a"), TVar("a")))
+        )
 
     def test_bad_annotation_fails(self):
         with self.assertRaises(TypeError):

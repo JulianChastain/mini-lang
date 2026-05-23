@@ -8,7 +8,7 @@ from lexer import Token, TokenType
 # ATOM := IDENT | '(' EXPR (':' TYPE)? ')'
 # APP := atom atom*
 #
-# TYPE := 'forall' IDENT '.' TYPE | TATOM ('->' TYPE)?
+# TYPE := 'forall' IDENT+ '.' TYPE | TATOM ('->' TYPE)?
 # TATOM := 'Int' | IDENT | '(' TYPE ')'
 
 
@@ -162,9 +162,15 @@ class Parser:
     def parse_type(self):
         if self.peek().type == TokenType.FORALL:
             self.incr()
-            var = self.expect(TokenType.IDENTIFIER)
+            # forall a b. T is shorthand for forall a. forall b. T
+            names = [self.expect(TokenType.IDENTIFIER).value]
+            while self.peek().type == TokenType.IDENTIFIER:
+                names.append(self.expect(TokenType.IDENTIFIER).value)
             self.expect(TokenType.DOT)
-            return Forall(var.value, self.parse_type())
+            t = self.parse_type()
+            for name in reversed(names):
+                t = Forall(name, t)
+            return t
         param = self.parse_type_atom()
         if self.peek().type == TokenType.ARROW:
             self.incr()

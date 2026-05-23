@@ -108,6 +108,12 @@ class TestParseTypes(unittest.TestCase):
             Forall("a", FunType(TVar("a"), TVar("a"))),
         )
 
+    def test_parse_forall_binder_list(self):
+        self.assertEqual(
+            self.parse_type("forall a b. a -> b"),
+            Forall("a", Forall("b", FunType(TVar("a"), TVar("b")))),
+        )
+
     def test_parse_nested_forall(self):
         self.assertEqual(
             self.parse_type("forall a. forall b. a -> b"),
