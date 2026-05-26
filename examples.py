@@ -65,6 +65,24 @@ ACCEPT = [
         "(forall a. a -> a) -> forall b. b -> b",
     ),
     Accept(
+        "let: an annotated let is polymorphic, so id works on itself",
+        "let id : forall a. a -> a = /x -> x in id id 42",
+        "Int",
+        "42",
+    ),
+    Accept(
+        "let: an unannotated let is fine at a single type",
+        "let inc = /x -> x + 1 in inc (inc 40)",
+        "Int",
+        "42",
+    ),
+    Accept(
+        "let: an unannotated let keeps a type that's already polymorphic",
+        "let id = ((/x -> x) : forall a. a -> a) in id id 42",
+        "Int",
+        "42",
+    ),
+    Accept(
         "predicative instantiation: id applied to id",
         "((/x -> x) : forall a. a -> a) ((/y -> y) : forall b. b -> b)",
         "forall a. a -> a",
@@ -95,6 +113,17 @@ REJECT = [
     Reject(
         "a type variable escaping its scope",
         "/f -> (f : forall a. a -> a)",
+        "InstRSolve",
+    ),
+    Reject(
+        "let: without an annotation, id is monomorphic (no generalization)",
+        "let id = /x -> x in let n = id 1 in id (/y -> y)",
+        "<:→",
+    ),
+    Reject(
+        "predicativity: a can't be instantiated to a polymorphic type",
+        "let id : forall a. a -> a = /x -> x in"
+        " (id : (forall b. b -> b) -> (forall b. b -> b))",
         "InstRSolve",
     ),
     Reject("lambda annotated as Int", "((/x -> x) : Int)", "<:→"),

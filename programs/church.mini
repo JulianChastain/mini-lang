@@ -1,0 +1,25 @@
+-- Church numerals. A numeral n applies a function n times:
+--   n s z = s (s (... (s z)))
+-- To use one numeral at several types, its type has to be polymorphic, and
+-- functions taking numerals need rank-2 types. The paper doesn't generalize
+-- lets, so every polymorphic definition is annotated.
+
+let zero : forall a. (a -> a) -> a -> a = /s -> /z -> z in
+
+let succ : (forall a. (a -> a) -> a -> a) -> (forall a. (a -> a) -> a -> a)
+  = /n -> /s -> /z -> s (n s z) in
+
+let add : (forall a. (a -> a) -> a -> a)
+       -> (forall a. (a -> a) -> a -> a)
+       -> (forall a. (a -> a) -> a -> a)
+  = /m -> /n -> /s -> /z -> m s (n s z) in
+
+let toInt : (forall a. (a -> a) -> a -> a) -> Int = /n -> n (/x -> x + 1) 0 in
+
+-- No annotation needed: succ already returns a polymorphic numeral.
+let three = succ (succ (succ zero)) in
+
+-- `three` is passed as a polymorphic numeral to add and toInt, and also
+-- applied directly at Int. (`three succ zero` would need a := numeral, a
+-- polytype; the system is predicative, so that's rejected.)
+toInt (add three three) + three (/x -> x + 10) 0

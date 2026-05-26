@@ -12,5 +12,12 @@ rule and carry a trace; `examples.py` drives both `main.py --demo` and
 
 ## Next: Algebraic data types and pattern matching
 
+## Done: let and a REPL
+`let x [: A] = e1 in e2`. Without an annotation x is monomorphic, like the
+paper; with one it can be polymorphic. `main.py` prints `value : type` and
+has a REPL with session definitions, file mode, and `--demo`.
+`programs/church.mini` shows rank-2 Church numerals.
+
 ## Known TODOs
-- `let` with generalization, so polymorphism doesn't need annotations
+- Optional: let-generalization, so polymorphic lets don't need annotations
+- Type aliases, so `programs/church.mini` can name its numeral type

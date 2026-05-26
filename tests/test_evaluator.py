@@ -45,6 +45,13 @@ class TestIntegration(unittest.TestCase):
         result = eval(Parser(lex(source))(), {})
         self.assertEqual(result, 4)
 
+    def test_eval_let(self):
+        self.assertEqual(eval(Parser(lex("let x = 20 in x + x + 2"))(), {}), 42)
+
+    def test_eval_let_is_lexically_scoped(self):
+        src = "let x = 1 in let f = /y -> x in let x = 2 in f 0"
+        self.assertEqual(eval(Parser(lex(src))(), {}), 1)
+
     def test_eval_erases_annotation(self):
         self.assertEqual(eval(Parser(lex("((/x -> x + 1) : Int -> Int) 2"))(), {}), 3)
 

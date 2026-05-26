@@ -1,9 +1,12 @@
 import unittest
+from pathlib import Path
 from context import show_type
 from errors import TypeCheckError
 from type_checker import typecheck
 from examples import ACCEPT, REJECT
-from main import run
+from main import run, Session
+from lexer import lex
+from parser import Parser
 
 
 class TestAccepted(unittest.TestCase):
@@ -44,6 +47,39 @@ class TestErrorTrace(unittest.TestCase):
                 return str(err)
 
         self.assertEqual(message("/x -> x x"), message("/x -> x x"))
+
+
+class TestPrograms(unittest.TestCase):
+    def test_church_numerals(self):
+        path = Path(__file__).parent.parent / "programs" / "church.mini"
+        self.assertEqual(run(path.read_text()), ("Int", "36"))
+
+
+class TestSession(unittest.TestCase):
+    def parse(self, src):
+        return Parser(lex(src)).parse_repl_input()
+
+    def test_definitions_persist(self):
+        session = Session()
+        session.define(self.parse("let inc = /x -> x + 1"))
+        self.assertEqual(run("inc 41", session), ("Int", "42"))
+
+    def test_top_level_definition_is_generalized(self):
+        session = Session()
+        t, _ = session.define(self.parse("let id = /x -> x"))
+        self.assertEqual(show_type(t), "forall a. a -> a")
+        self.assertEqual(run("id id 42", session), ("Int", "42"))
+
+    def test_annotated_definition_keeps_its_annotation(self):
+        session = Session()
+        t, _ = session.define(self.parse("let f : Int -> Int = /x -> x"))
+        self.assertEqual(show_type(t), "Int -> Int")
+
+    def test_failed_definition_is_not_stored(self):
+        session = Session()
+        with self.assertRaises(TypeCheckError):
+            session.define(self.parse("let bad = 1 2"))
+        self.assertNotIn("bad", session.types)
 
 
 class TestGeneralization(unittest.TestCase):

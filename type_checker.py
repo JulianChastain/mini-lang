@@ -16,6 +16,7 @@ from parser import (
     IntLit,
     Add,
     Anno,
+    Let,
     Type,
     IntType,
     FunType,
@@ -42,7 +43,8 @@ StaticInt = IntType()
 def show_expr(expr: Expr, prec: int = 0) -> str:
     """Print an expression in surface syntax with minimal parentheses.
 
-    Precedence, loosest first: lambda (0), `+` (1), application (2), atom (3).
+    Precedence, loosest first: lambda and let (0), `+` (1), application (2),
+    atom (3).
     """
     match expr:
         case Var(name):
@@ -54,6 +56,10 @@ def show_expr(expr: Expr, prec: int = 0) -> str:
             return f"({show_expr(inner, 1)} : {show_type(t)})"
         case Lam(param, body):
             s, own = f"/{param} -> {show_expr(body)}", 0
+        case Let(name, t, value, body):
+            annotation = "" if t is None else f" : {show_type(t)}"
+            s = f"let {name}{annotation} = {show_expr(value)} in {show_expr(body)}"
+            own = 0
         case Add(lhs, rhs):
             s, own = f"{show_expr(lhs, 1)} + {show_expr(rhs, 2)}", 1
         case App(fn, arg):
@@ -79,8 +85,39 @@ def _rename_tvar(expr: Expr, name: str, new_name: str) -> Expr:
             return Add(
                 _rename_tvar(lhs, name, new_name), _rename_tvar(rhs, name, new_name)
             )
+        case Let(x, t, value, body):
+            return Let(
+                x,
+                None if t is None else substitute(t, name, TVar(new_name)),
+                _rename_tvar(value, name, new_name),
+                _rename_tvar(body, name, new_name),
+            )
         case Var(_) | IntLit(_):
             return expr
+
+
+def _let_binding(
+    ctx: Context, name: str, annotation: Type | None, value: Expr
+) -> tuple[Type, Context]:
+    """The type x gets in `let x [: A] = e1 in e2`, and the context after e1.
+
+    With an annotation, e1 is checked against A, so x can be polymorphic.
+    Without one, x gets e1's synthesized type as is: the paper doesn't
+    generalize, so an unannotated x is monomorphic (its existentials are
+    shared by every use).
+    """
+    if annotation is None:
+        with rule_frame("Let", f"inferring the type of {name}"):
+            t, theta = synth(ctx, value)
+        return theta.apply(t), theta
+    if not ctx.well_formed(annotation):
+        raise TypeCheckError(
+            "Let",
+            f"annotation {show_type(annotation)} on {name} mentions a type"
+            " variable that isn't in scope",
+        )
+    with rule_frame("Let", f"checking {name} against {show_type(annotation)}"):
+        return annotation, check(ctx, value, annotation)
 
 
 def synth(ctx: Context, expr: Expr) -> tuple[Type, Context]:
@@ -121,6 +158,13 @@ def synth(ctx: Context, expr: Expr) -> tuple[Type, Context]:
             # →E
             fn_type, theta = synth(ctx, fn)
             return app_synth(theta, theta.apply(fn_type), arg)
+        case Let(name, annotation, value, body):
+            # Let⇒. Unlike →I, only the x : A entry is removed afterwards:
+            # existentials the body introduced after it may appear in the
+            # result type, and types never mention term variables.
+            t, theta = _let_binding(ctx, name, annotation, value)
+            result, delta = synth(theta.extend(CVar(name, t)), body)
+            return result, delta.replace(CVar(name, t))
     raise TypeCheckError("Sub", f"cannot synthesize a type for {expr}")
 
 
@@ -146,6 +190,13 @@ def check(ctx: Context, expr: Expr, expected_type: Type) -> Context:
             with rule_frame("→I", judgment):
                 ctx = ctx.extend(CVar(param, param_type))
                 return check(ctx, body, result_type).drop(CVar(param, param_type))
+        case Let(name, annotation, value, body), _:
+            # Let⇐: like →I, the body is checked so a lambda in it still
+            # gets the expected type pushed in.
+            t, theta = _let_binding(ctx, name, annotation, value)
+            return check(theta.extend(CVar(name, t)), body, expected_type).drop(
+                CVar(name, t)
+            )
     # Sub
     with rule_frame("Sub", judgment):
         synthed, theta = synth(ctx, expr)
@@ -243,11 +294,15 @@ def _replace_exists(t: Type, name: str, replacement: Type) -> Type:
     return t
 
 
-def typecheck_expr(expr: Expr) -> Type:
-    """Synthesize the type of a whole program, generalized."""
+def typecheck_expr(expr: Expr, env: dict[str, Type] | None = None) -> Type:
+    """Synthesize the type of a whole program, generalized.
+
+    `env` gives the closed types of names defined earlier, e.g. in the REPL.
+    """
     reset_fresh()
-    t, ctx = synth(Context(), expr)
-    return generalize(ctx, t)
+    ctx = Context().extend(*(CVar(n, t) for n, t in (env or {}).items()))
+    t, delta = synth(ctx, expr)
+    return generalize(delta, t)
 
 
 def typecheck(src: str) -> Type:

@@ -12,6 +12,8 @@ from parser import (
     FunType,
     TVar,
     Forall,
+    Let,
+    Definition,
 )
 
 
@@ -118,6 +120,53 @@ class TestParseTypes(unittest.TestCase):
         self.assertEqual(
             self.parse_type("forall a. forall b. a -> b"),
             Forall("a", Forall("b", FunType(TVar("a"), TVar("b")))),
+        )
+
+
+class TestParseLet(unittest.TestCase):
+    def test_parse_let(self):
+        self.assertEqual(
+            Parser(lex("let x = 1 in x + 2"))(),
+            Let("x", None, IntLit(1), Add(Var("x"), IntLit(2))),
+        )
+
+    def test_parse_annotated_let(self):
+        self.assertEqual(
+            Parser(lex("let id : forall a. a -> a = /x -> x in id"))(),
+            Let(
+                "id",
+                Forall("a", FunType(TVar("a"), TVar("a"))),
+                Lam("x", Var("x")),
+                Var("id"),
+            ),
+        )
+
+    def test_lambda_in_let_value_stops_at_in(self):
+        self.assertEqual(
+            Parser(lex("let f = /x -> x in f 1"))(),
+            Let("f", None, Lam("x", Var("x")), App(Var("f"), IntLit(1))),
+        )
+
+    def test_nested_let(self):
+        self.assertEqual(
+            Parser(lex("let x = 1 in let y = x in y"))(),
+            Let("x", None, IntLit(1), Let("y", None, Var("x"), Var("y"))),
+        )
+
+    def test_let_requires_in(self):
+        with self.assertRaises(SyntaxError):
+            Parser(lex("let x = 1"))()
+
+    def test_repl_definition(self):
+        self.assertEqual(
+            Parser(lex("let x : Int = 1")).parse_repl_input(),
+            Definition("x", IntType(), IntLit(1)),
+        )
+
+    def test_repl_let_in_is_an_expression(self):
+        self.assertEqual(
+            Parser(lex("let x = 1 in x")).parse_repl_input(),
+            Let("x", None, IntLit(1), Var("x")),
         )
 
 

@@ -35,6 +35,35 @@ class TestLexer(unittest.TestCase):
         self.assertEqual(tokens[6].value, "y")
         self.assertEqual(tokens[7].type, TokenType.EOF)
 
+    def test_lex_let(self):
+        types = [t.type for t in lex("let x = 1 in x")]
+        self.assertEqual(
+            types,
+            [
+                TokenType.LET,
+                TokenType.IDENTIFIER,
+                TokenType.EQUALS,
+                TokenType.INT,
+                TokenType.IN,
+                TokenType.IDENTIFIER,
+                TokenType.EOF,
+            ],
+        )
+
+    def test_keywords_inside_identifiers(self):
+        tokens = lex("letter inside")
+        self.assertEqual([t.value for t in tokens[:2]], ["letter", "inside"])
+        self.assertEqual(tokens[0].type, TokenType.IDENTIFIER)
+
+    def test_comment_to_end_of_line(self):
+        types = [t.type for t in lex("x -- a comment -> y\ny")]
+        self.assertEqual(
+            types, [TokenType.IDENTIFIER, TokenType.IDENTIFIER, TokenType.EOF]
+        )
+
+    def test_comment_at_end_of_input(self):
+        self.assertEqual([t.type for t in lex("x -- done")], [TokenType.IDENTIFIER, TokenType.EOF])
+
     def test_lex_identifier_with_underscore(self):
         tokens = lex("foo_bar _x x_1")
         self.assertEqual(len(tokens), 4)

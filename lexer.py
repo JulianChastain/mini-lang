@@ -14,10 +14,18 @@ class TokenType(Enum):
     DOT = auto()
     FORALL = auto()
     INT_TYPE = auto()
+    LET = auto()
+    IN = auto()
+    EQUALS = auto()
     EOF = auto()
 
 
-KEYWORDS = {"forall": TokenType.FORALL, "Int": TokenType.INT_TYPE}
+KEYWORDS = {
+    "forall": TokenType.FORALL,
+    "Int": TokenType.INT_TYPE,
+    "let": TokenType.LET,
+    "in": TokenType.IN,
+}
 
 
 @dataclass
@@ -45,9 +53,17 @@ def lex(text: str) -> list[Token]:
                     tokens.append(Token(TokenType.COLON, char))
                 case ".":
                     tokens.append(Token(TokenType.DOT, char))
+                case "=":
+                    tokens.append(Token(TokenType.EQUALS, char))
                 case "-":
                     try:
                         next_idx, next_char = next(t)
+                        if next_char == "-":
+                            # `--` comments run to the end of the line
+                            for _, c in t:
+                                if c == "\n":
+                                    break
+                            continue
                         if next_char != ">":
                             raise SyntaxError(
                                 f"Expected `>` after `-`, but encountered {next_char}"

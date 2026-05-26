@@ -2,7 +2,7 @@ import unittest
 from type_checker import synth, check, app_synth, typecheck, show_expr, IntType, FunType
 from lexer import lex
 from parser import Parser
-from parser import IntLit, Add, Lam, Var, Anno, TVar, Forall, Exists
+from parser import IntLit, Add, Lam, Var, Anno, Let, TVar, Forall, Exists
 from context import Context, CVar, CTVar, CExists
 
 INT = IntType()
@@ -100,6 +100,47 @@ class TestTypeChecker(unittest.TestCase):
             app_synth(Context(), INT, IntLit(1))
 
 
+class TestLet(unittest.TestCase):
+    def test_annotated_let_is_polymorphic(self):
+        self.assertEqual(
+            typecheck("let id : forall a. a -> a = /x -> x in id id 1"), INT
+        )
+
+    def test_unannotated_let_is_monomorphic(self):
+        with self.assertRaises(TypeError):
+            typecheck("let id = /x -> x in id id 1")
+
+    def test_let_annotation_mismatch(self):
+        with self.assertRaises(TypeError):
+            typecheck("let x : Int -> Int = 1 in x")
+
+    def test_let_annotation_not_well_formed(self):
+        with self.assertRaises(TypeError):
+            typecheck("let x : a = 1 in x")
+
+    def test_synth_let_keeps_existentials_from_body(self):
+        # The body's α̂ → β̂ is introduced after x : Int; dropping everything
+        # from x on would leave the result type ill-formed.
+        t, ctx = synth(Context(), Let("x", None, IntLit(1), Lam("y", Var("y"))))
+        self.assertTrue(ctx.well_formed(t))
+        self.assertIsNone(ctx.lookup("x"))
+
+    def test_shadowed_let(self):
+        self.assertEqual(typecheck("let x = 1 in let x = /y -> y in x 2"), INT)
+
+    def test_check_let_pushes_type_into_body(self):
+        # The body is a lambda that only checks against a rank-2 type.
+        src = (
+            "((let k = 1 in /f -> f f) :"
+            " (forall a. a -> a) -> (forall b. b -> b))"
+        )
+        typecheck(src)
+
+    def test_let_annotation_can_mention_outer_type_variable(self):
+        src = "((/x -> let y : a = x in y) : forall a. a -> a) 5"
+        self.assertEqual(typecheck(src), INT)
+
+
 class TestShowExpr(unittest.TestCase):
     def test_round_trips_through_parser(self):
         for src in [
@@ -109,6 +150,8 @@ class TestShowExpr(unittest.TestCase):
             "1 + (2 + 3)",
             "(/x -> x) + 1",
             "((/x -> x) : forall a. a -> a) 1",
+            "let id : forall a. a -> a = /x -> x in id 1",
+            "(let x = 1 in x) + 1",
         ]:
             expr = Parser(lex(src))()
             self.assertEqual(Parser(lex(show_expr(expr)))(), expr)

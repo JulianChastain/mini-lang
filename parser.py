@@ -3,8 +3,10 @@ from dataclasses import dataclass
 from lexer import Token, TokenType
 
 # Conceptual Structure
-# EXPR := LAMBDA | APP
+# EXPR := LAMBDA | LET | ADD
 # LAMBDA := '/' IDENT '->' EXPR
+# LET := 'let' IDENT (':' TYPE)? '=' EXPR 'in' EXPR
+# ADD := APP ('+' APP)*
 # ATOM := IDENT | '(' EXPR (':' TYPE)? ')'
 # APP := atom atom*
 #
@@ -78,7 +80,24 @@ class Anno:
     type: Type
 
 
-Expr = Var | Lam | App | IntLit | Add | Anno
+# let name : type = value in body. `type` is None when unannotated.
+@dataclass(frozen=True)
+class Let:
+    name: str
+    type: Type | None
+    value: "Expr"
+    body: "Expr"
+
+
+Expr = Var | Lam | App | IntLit | Add | Anno | Let
+
+
+# A REPL definition: `let name : type = value` with no `in`.
+@dataclass(frozen=True)
+class Definition:
+    name: str
+    type: Type | None
+    value: Expr
 
 
 @dataclass
@@ -123,6 +142,23 @@ class Parser:
         self.expect(TokenType.ARROW)
         body = self.parse_expr()
         return Lam(param.value, body)
+
+    def parse_let_header(self):
+        """'let' IDENT (':' TYPE)? '=' EXPR, shared by `let ... in` and
+        REPL definitions."""
+        self.expect(TokenType.LET)
+        name = self.expect(TokenType.IDENTIFIER).value
+        annotation = None
+        if self.peek().type == TokenType.COLON:
+            self.incr()
+            annotation = self.parse_type()
+        self.expect(TokenType.EQUALS)
+        return name, annotation, self.parse_expr()
+
+    def parse_let(self):
+        name, annotation, value = self.parse_let_header()
+        self.expect(TokenType.IN)
+        return Let(name, annotation, value, self.parse_expr())
 
     def parse_addexpr(self):
         lhs = self.parse_app()
@@ -181,9 +217,23 @@ class Parser:
         t = self.peek().type
         if t == TokenType.LAMBDA:
             return self.parse_lam()
+        if t == TokenType.LET:
+            return self.parse_let()
         return self.parse_addexpr()
 
     def __call__(self):
         v = self.parse_expr()
+        self.expect(TokenType.EOF)
+        return v
+
+    def parse_repl_input(self) -> Expr | Definition:
+        """An expression, or a `let` without `in` that defines a name."""
+        if self.peek().type != TokenType.LET:
+            return self()
+        name, annotation, value = self.parse_let_header()
+        if self.peek().type == TokenType.EOF:
+            return Definition(name, annotation, value)
+        self.expect(TokenType.IN)
+        v = Let(name, annotation, value, self.parse_expr())
         self.expect(TokenType.EOF)
         return v
