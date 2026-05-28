@@ -35,6 +35,61 @@ class TestLexer(unittest.TestCase):
         self.assertEqual(tokens[6].value, "y")
         self.assertEqual(tokens[7].type, TokenType.EOF)
 
+    def test_lex_declaration_tokens(self):
+        types = [t.type for t in lex("type List a = Nil | Cons a (List a)")]
+        self.assertEqual(
+            types,
+            [
+                TokenType.TYPE,
+                TokenType.UIDENT,
+                TokenType.IDENTIFIER,
+                TokenType.EQUALS,
+                TokenType.UIDENT,
+                TokenType.BAR,
+                TokenType.UIDENT,
+                TokenType.IDENTIFIER,
+                TokenType.LPAREN,
+                TokenType.UIDENT,
+                TokenType.IDENTIFIER,
+                TokenType.RPAREN,
+                TokenType.EOF,
+            ],
+        )
+
+    def test_lex_match_tokens(self):
+        types = [t.type for t in lex("match p with | (x, _) -> x")]
+        self.assertEqual(
+            types,
+            [
+                TokenType.MATCH,
+                TokenType.IDENTIFIER,
+                TokenType.WITH,
+                TokenType.BAR,
+                TokenType.LPAREN,
+                TokenType.IDENTIFIER,
+                TokenType.COMMA,
+                TokenType.UNDERSCORE,
+                TokenType.RPAREN,
+                TokenType.ARROW,
+                TokenType.IDENTIFIER,
+                TokenType.EOF,
+            ],
+        )
+
+    def test_underscore_prefix_is_still_an_identifier(self):
+        self.assertEqual(lex("_x")[0].type, TokenType.IDENTIFIER)
+        self.assertEqual(lex("_")[0].type, TokenType.UNDERSCORE)
+
+    def test_lex_rec(self):
+        self.assertEqual(lex("let rec")[1].type, TokenType.REC)
+
+    def test_capitalized_names_are_uident(self):
+        tokens = lex("Some x Int")
+        self.assertEqual(
+            [t.type for t in tokens[:3]],
+            [TokenType.UIDENT, TokenType.IDENTIFIER, TokenType.INT_TYPE],
+        )
+
     def test_lex_let(self):
         types = [t.type for t in lex("let x = 1 in x")]
         self.assertEqual(
@@ -104,7 +159,7 @@ class TestLexer(unittest.TestCase):
 
     def test_lex_keyword_prefix_is_identifier(self):
         tokens = lex("Integer foralls")
-        self.assertEqual(tokens[0].type, TokenType.IDENTIFIER)
+        self.assertEqual(tokens[0].type, TokenType.UIDENT)
         self.assertEqual(tokens[1].type, TokenType.IDENTIFIER)
 
 

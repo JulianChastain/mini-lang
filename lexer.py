@@ -8,6 +8,7 @@ class TokenType(Enum):
     LPAREN = auto()
     RPAREN = auto()
     IDENTIFIER = auto()
+    UIDENT = auto()  # capitalized: constructor and type names
     INT = auto()
     PLUS = auto()
     COLON = auto()
@@ -17,6 +18,13 @@ class TokenType(Enum):
     LET = auto()
     IN = auto()
     EQUALS = auto()
+    TYPE = auto()
+    MATCH = auto()
+    WITH = auto()
+    REC = auto()
+    BAR = auto()
+    COMMA = auto()
+    UNDERSCORE = auto()  # `_` on its own, the wildcard pattern
     EOF = auto()
 
 
@@ -25,6 +33,10 @@ KEYWORDS = {
     "Int": TokenType.INT_TYPE,
     "let": TokenType.LET,
     "in": TokenType.IN,
+    "type": TokenType.TYPE,
+    "match": TokenType.MATCH,
+    "with": TokenType.WITH,
+    "rec": TokenType.REC,
 }
 
 
@@ -55,6 +67,10 @@ def lex(text: str) -> list[Token]:
                     tokens.append(Token(TokenType.DOT, char))
                 case "=":
                     tokens.append(Token(TokenType.EQUALS, char))
+                case "|":
+                    tokens.append(Token(TokenType.BAR, char))
+                case ",":
+                    tokens.append(Token(TokenType.COMMA, char))
                 case "-":
                     try:
                         next_idx, next_char = next(t)
@@ -86,9 +102,15 @@ def lex(text: str) -> list[Token]:
                     ):
                         name += next(t)[1]
                         idx += 1
-                    tokens.append(
-                        Token(KEYWORDS.get(name, TokenType.IDENTIFIER), name)
-                    )
+                    if name in KEYWORDS:
+                        kind = KEYWORDS[name]
+                    elif name == "_":
+                        kind = TokenType.UNDERSCORE
+                    elif name[0].isupper():
+                        kind = TokenType.UIDENT
+                    else:
+                        kind = TokenType.IDENTIFIER
+                    tokens.append(Token(kind, name))
                 case _:
                     raise SyntaxError(
                         f"Unexpected character {char}. Don't know how to process it"
