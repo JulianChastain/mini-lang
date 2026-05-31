@@ -3,15 +3,21 @@ from dataclasses import dataclass
 from lexer import Token, TokenType
 
 # Conceptual Structure
+# PROGRAM := ITEM* EXPR?
+# ITEM := DECL+ | 'let' IDENT (':' TYPE)? '=' EXPR      (no `in`)
+# DECL := 'type' UIDENT IDENT* '=' '|'? CON ('|' CON)*
+# CON := UIDENT TATOM*
+#
 # EXPR := LAMBDA | LET | ADD
 # LAMBDA := '/' IDENT '->' EXPR
 # LET := 'let' IDENT (':' TYPE)? '=' EXPR 'in' EXPR
 # ADD := APP ('+' APP)*
-# ATOM := IDENT | '(' EXPR (':' TYPE)? ')'
+# ATOM := IDENT | UIDENT | INT | '(' EXPR (':' TYPE)? ')'
 # APP := atom atom*
 #
-# TYPE := 'forall' IDENT+ '.' TYPE | TATOM ('->' TYPE)?
-# TATOM := 'Int' | IDENT | '(' TYPE ')'
+# TYPE := 'forall' IDENT+ '.' TYPE | TAPP ('->' TYPE)?
+# TAPP := UIDENT TATOM* | TATOM
+# TATOM := 'Int' | IDENT | UIDENT | '(' TYPE ')'
 
 
 @dataclass(frozen=True)
@@ -43,11 +49,24 @@ class Exists:
     name: str
 
 
-Type = FunType | IntType | TVar | Forall | Exists
+# A declared type applied to its arguments, e.g. List Int or Option (List a).
+@dataclass(frozen=True)
+class TCon:
+    name: str
+    args: tuple["Type", ...] = ()
+
+
+Type = FunType | IntType | TVar | Forall | Exists | TCon
 
 
 @dataclass(frozen=True)
 class Var:
+    name: str
+
+
+# A constructor, e.g. Some or Nil. Applied with ordinary application.
+@dataclass(frozen=True)
+class Con:
     name: str
 
 
@@ -89,7 +108,7 @@ class Let:
     body: "Expr"
 
 
-Expr = Var | Lam | App | IntLit | Add | Anno | Let
+Expr = Var | Con | Lam | App | IntLit | Add | Anno | Let
 
 
 # A REPL definition: `let name : type = value` with no `in`.
@@ -98,6 +117,39 @@ class Definition:
     name: str
     type: Type | None
     value: Expr
+
+
+# type Name params = Con1 fields | Con2 fields | ...
+@dataclass(frozen=True)
+class TypeDecl:
+    name: str
+    params: tuple[str, ...]
+    constructors: tuple[tuple[str, tuple[Type, ...]], ...]
+
+
+# Consecutive type declarations, which may refer to each other.
+@dataclass(frozen=True)
+class DeclGroup:
+    decls: tuple[TypeDecl, ...]
+
+
+Item = DeclGroup | Definition
+
+
+# Top-level items, then an optional final expression.
+@dataclass(frozen=True)
+class Program:
+    items: tuple[Item, ...]
+    expr: Expr | None
+
+
+_ATOM_START = (TokenType.IDENTIFIER, TokenType.UIDENT, TokenType.LPAREN, TokenType.INT)
+_TYPE_ATOM_START = (
+    TokenType.INT_TYPE,
+    TokenType.IDENTIFIER,
+    TokenType.UIDENT,
+    TokenType.LPAREN,
+)
 
 
 @dataclass
@@ -123,6 +175,9 @@ class Parser:
         if nextv.type == TokenType.IDENTIFIER:
             self.incr()
             return Var(nextv.value)
+        if nextv.type == TokenType.UIDENT:
+            self.incr()
+            return Con(nextv.value)
         if nextv.type == TokenType.LPAREN:
             self.incr()
             exprv = self.parse_expr()
@@ -169,16 +224,9 @@ class Parser:
 
     def parse_app(self):
         cur = self.parse_atom()
-        while True:
-            next_tok_type = self.peek().type
-            if (
-                next_tok_type == TokenType.IDENTIFIER
-                or next_tok_type == TokenType.LPAREN
-                or next_tok_type == TokenType.INT
-            ):
-                cur = App(cur, self.parse_atom())
-            else:
-                return cur
+        while self.peek().type in _ATOM_START:
+            cur = App(cur, self.parse_atom())
+        return cur
 
     def parse_type_atom(self):
         nextv = self.peek()
@@ -188,12 +236,47 @@ class Parser:
         if nextv.type == TokenType.IDENTIFIER:
             self.incr()
             return TVar(nextv.value)
+        if nextv.type == TokenType.UIDENT:
+            # A bare type name; applied types need parentheses here.
+            self.incr()
+            return TCon(nextv.value)
         if nextv.type == TokenType.LPAREN:
             self.incr()
             typev = self.parse_type()
             self.expect(TokenType.RPAREN)
             return typev
         raise SyntaxError("Failed to parse type atom")
+
+    def parse_type_app(self):
+        if self.peek().type != TokenType.UIDENT:
+            return self.parse_type_atom()
+        name = self.expect(TokenType.UIDENT).value
+        args = []
+        while self.peek().type in _TYPE_ATOM_START:
+            args.append(self.parse_type_atom())
+        return TCon(name, tuple(args))
+
+    def parse_decl(self) -> TypeDecl:
+        self.expect(TokenType.TYPE)
+        name = self.expect(TokenType.UIDENT).value
+        params = []
+        while self.peek().type == TokenType.IDENTIFIER:
+            params.append(self.expect(TokenType.IDENTIFIER).value)
+        self.expect(TokenType.EQUALS)
+        if self.peek().type == TokenType.BAR:
+            self.incr()
+        constructors = [self.parse_constructor()]
+        while self.peek().type == TokenType.BAR:
+            self.incr()
+            constructors.append(self.parse_constructor())
+        return TypeDecl(name, tuple(params), tuple(constructors))
+
+    def parse_constructor(self) -> tuple[str, tuple[Type, ...]]:
+        name = self.expect(TokenType.UIDENT).value
+        fields = []
+        while self.peek().type in _TYPE_ATOM_START:
+            fields.append(self.parse_type_atom())
+        return name, tuple(fields)
 
     def parse_type(self):
         if self.peek().type == TokenType.FORALL:
@@ -207,7 +290,7 @@ class Parser:
             for name in reversed(names):
                 t = Forall(name, t)
             return t
-        param = self.parse_type_atom()
+        param = self.parse_type_app()
         if self.peek().type == TokenType.ARROW:
             self.incr()
             return FunType(param, self.parse_type())
@@ -228,12 +311,40 @@ class Parser:
 
     def parse_repl_input(self) -> Expr | Definition:
         """An expression, or a `let` without `in` that defines a name."""
-        if self.peek().type != TokenType.LET:
-            return self()
-        name, annotation, value = self.parse_let_header()
-        if self.peek().type == TokenType.EOF:
-            return Definition(name, annotation, value)
-        self.expect(TokenType.IN)
-        v = Let(name, annotation, value, self.parse_expr())
+        program = self.parse_program()
+        match program:
+            case Program((), expr) if expr is not None:
+                return expr
+            case Program((Definition() as d,), None):
+                return d
+        raise SyntaxError("Expected one expression or definition")
+
+    def parse_program(self) -> Program:
+        """Items, then an optional final expression.
+
+        Items always start with `type` or `let`. A `let` followed by `in` is
+        the final expression rather than a definition. A plain expression
+        after definitions would be swallowed by the last definition's body
+        (`let x = f a  g x` reads as f a g x), so it needs to start with a
+        keyword; otherwise define `main` instead.
+        """
+        items: list[Item] = []
+        while True:
+            t = self.peek().type
+            if t == TokenType.TYPE:
+                decls = []
+                while self.peek().type == TokenType.TYPE:
+                    decls.append(self.parse_decl())
+                items.append(DeclGroup(tuple(decls)))
+            elif t == TokenType.LET:
+                start = self.Idx
+                name, annotation, value = self.parse_let_header()
+                if self.peek().type == TokenType.IN:
+                    self.Idx = start
+                    break
+                items.append(Definition(name, annotation, value))
+            else:
+                break
+        expr = None if self.peek().type == TokenType.EOF else self.parse_expr()
         self.expect(TokenType.EOF)
-        return v
+        return Program(tuple(items), expr)
