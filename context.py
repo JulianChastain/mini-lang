@@ -5,7 +5,7 @@
 # backtracks, so there's no need to undo anything.
 from dataclasses import dataclass
 from itertools import count
-from parser import Type, IntType, FunType, TVar, Forall, Exists
+from parser import Type, IntType, FunType, TVar, Forall, Exists, TCon
 
 
 # ---------------------------------------------------------------------------
@@ -20,6 +20,8 @@ def is_monotype(t: Type) -> bool:
             return True
         case FunType(param, result):
             return is_monotype(param) and is_monotype(result)
+        case TCon(_, args):
+            return all(is_monotype(arg) for arg in args)
         case Forall(_, _):
             return False
 
@@ -33,6 +35,8 @@ def occurs(name: str, t: Type) -> bool:
             return False
         case FunType(param, result):
             return occurs(name, param) or occurs(name, result)
+        case TCon(_, args):
+            return any(occurs(name, arg) for arg in args)
         case Forall(_, body):
             return occurs(name, body)
 
@@ -53,6 +57,8 @@ def substitute(t: Type, name: str, replacement: Type) -> Type:
                 substitute(param, name, replacement),
                 substitute(result, name, replacement),
             )
+        case TCon(con, args):
+            return TCon(con, tuple(substitute(arg, name, replacement) for arg in args))
         case Forall(var, body):
             if var == name:
                 return t
@@ -75,6 +81,18 @@ def show_type(t: Type) -> str:
             if isinstance(param, (FunType, Forall)):
                 lhs = f"({lhs})"
             return f"{lhs} -> {show_type(result)}"
+        case TCon(name, args):
+            # Arguments are atoms, so anything that isn't gets parentheses:
+            # Option (List Int), List (Int -> Int).
+            parts = [name]
+            for arg in args:
+                s = show_type(arg)
+                if isinstance(arg, (FunType, Forall)) or (
+                    isinstance(arg, TCon) and arg.args
+                ):
+                    s = f"({s})"
+                parts.append(s)
+            return " ".join(parts)
         case Forall(_, _):
             # Nested foralls print as one binder list: forall a b. ...
             names = []
@@ -230,6 +248,8 @@ class Context:
                 return t
             case FunType(param, result):
                 return FunType(self.apply(param), self.apply(result))
+            case TCon(name, args):
+                return TCon(name, tuple(self.apply(arg) for arg in args))
             case Forall(var, body):
                 return Forall(var, self.apply(body))
 
@@ -244,6 +264,8 @@ class Context:
                 return self.has_exists(name)
             case FunType(param, result):
                 return self.well_formed(param) and self.well_formed(result)
+            case TCon(_, args):
+                return all(self.well_formed(arg) for arg in args)
             case Forall(var, body):
                 return self.extend(CTVar(var)).well_formed(body)
 

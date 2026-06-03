@@ -1,6 +1,6 @@
 import unittest
 from lexer import lex
-from parser import Parser, IntType, FunType, TVar, Forall, Exists
+from parser import Parser, IntType, FunType, TVar, Forall, Exists, TCon
 from context import (
     is_monotype,
     occurs,
@@ -75,6 +75,36 @@ class TestTypeOperations(unittest.TestCase):
         ]:
             t = parse_type(src)
             self.assertEqual(parse_type(show_type(t)), t)
+
+    def test_declared_types(self):
+        list_a = TCon("List", (TVar("a"),))
+        self.assertTrue(is_monotype(list_a))
+        self.assertFalse(is_monotype(TCon("List", (Forall("a", TVar("a")),))))
+        self.assertTrue(occurs("b", TCon("Option", (Exists("b"),))))
+        self.assertEqual(substitute(list_a, "a", INT), TCon("List", (INT,)))
+
+    def test_show_declared_types(self):
+        self.assertEqual(show_type(TCon("Bool")), "Bool")
+        self.assertEqual(
+            show_type(TCon("Option", (TCon("List", (INT,)),))), "Option (List Int)"
+        )
+        self.assertEqual(
+            show_type(FunType(TCon("List", (TVar("a"),)), INT)), "List a -> Int"
+        )
+        self.assertEqual(
+            show_type(TCon("List", (FunType(INT, INT),))), "List (Int -> Int)"
+        )
+
+    def test_show_declared_type_round_trips(self):
+        for src in ["Option (List Int)", "List a -> Option (a -> a)", "Bool"]:
+            t = parse_type(src)
+            self.assertEqual(parse_type(show_type(t)), t)
+
+    def test_apply_inside_declared_type(self):
+        ctx = Context().extend(CSolved("a", INT))
+        self.assertEqual(
+            ctx.apply(TCon("List", (Exists("a"),))), TCon("List", (INT,))
+        )
 
     def test_fresh_names_are_distinct(self):
         self.assertNotEqual(fresh(), fresh())

@@ -23,6 +23,7 @@ from parser import (
     TVar,
     Forall,
     Exists,
+    TCon,
 )
 from context import (
     Context,
@@ -236,6 +237,8 @@ def _exists_in(t: Type) -> list[str]:
             return [name]
         case FunType(param, result):
             return list(dict.fromkeys(_exists_in(param) + _exists_in(result)))
+        case TCon(_, args):
+            return list(dict.fromkeys(n for arg in args for n in _exists_in(arg)))
         case Forall(_, body):
             return _exists_in(body)
     return []
@@ -247,6 +250,8 @@ def _tvars_in(t: Type) -> set[str]:
             return {name}
         case FunType(param, result):
             return _tvars_in(param) | _tvars_in(result)
+        case TCon(_, args):
+            return set().union(*(_tvars_in(arg) for arg in args))
         case Forall(var, body):
             return {var} | _tvars_in(body)
     return set()
@@ -288,6 +293,10 @@ def _replace_exists(t: Type, name: str, replacement: Type) -> Type:
             return FunType(
                 _replace_exists(param, name, replacement),
                 _replace_exists(result, name, replacement),
+            )
+        case TCon(con, args):
+            return TCon(
+                con, tuple(_replace_exists(arg, name, replacement) for arg in args)
             )
         case Forall(var, body):
             return Forall(var, _replace_exists(body, name, replacement))
