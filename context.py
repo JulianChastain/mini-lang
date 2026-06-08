@@ -3,7 +3,7 @@
 # The context is immutable: every operation takes Γ and returns a new Δ,
 # mirroring the paper's Γ ⊢ ... ⊣ Δ judgments. The algorithm never
 # backtracks, so there's no need to undo anything.
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from itertools import count
 from parser import Type, IntType, FunType, TVar, Forall, Exists, TCon
 
@@ -182,6 +182,34 @@ def show_entry(entry: Entry) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Declared types
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TypeInfo:
+    params: tuple[str, ...]
+    constructors: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CtorInfo:
+    type_name: str
+    fields: tuple[Type, ...]
+    # ∀params. F1 → … → Fn → T params
+    scheme: Type
+
+
+@dataclass(frozen=True)
+class TypeTable:
+    """Declared types and their constructors. Built by types_table.py and
+    never mutated: declaring a group returns a new table."""
+
+    types: dict[str, TypeInfo] = field(default_factory=dict)
+    ctors: dict[str, CtorInfo] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
 # The ordered context
 # ---------------------------------------------------------------------------
 
@@ -189,13 +217,20 @@ def show_entry(entry: Entry) -> str:
 @dataclass(frozen=True)
 class Context:
     entries: tuple[Entry, ...] = ()
+    # Declarations sit at the top level and never go out of scope, so they
+    # live beside the ordered entries rather than in them. Every rule
+    # threads Γ to Δ, which carries the table along with no extra plumbing.
+    table: TypeTable = field(default_factory=TypeTable)
 
     def __str__(self) -> str:
         return ", ".join(show_entry(e) for e in self.entries)
 
+    def _with(self, entries: tuple[Entry, ...]) -> "Context":
+        return replace(self, entries=entries)
+
     def extend(self, *entries: Entry) -> "Context":
         """Γ, entries"""
-        return Context(self.entries + entries)
+        return self._with(self.entries + entries)
 
     def _index(self, entry: Entry) -> int:
         """Position of the rightmost `entry`, the innermost scope if it's
@@ -207,12 +242,12 @@ class Context:
 
     def drop(self, entry: Entry) -> "Context":
         """Γ, entry, Θ  becomes  Γ. Used to leave a scope."""
-        return Context(self.entries[: self._index(entry)])
+        return self._with(self.entries[: self._index(entry)])
 
     def replace(self, entry: Entry, *new_entries: Entry) -> "Context":
         """Γ[entry]  becomes  Γ[new_entries], keeping everything else in place."""
         i = self._index(entry)
-        return Context(self.entries[:i] + new_entries + self.entries[i + 1 :])
+        return self._with(self.entries[:i] + new_entries + self.entries[i + 1 :])
 
     def lookup(self, name: str) -> Type | None:
         """The type of term variable `name`; the rightmost binding wins."""
@@ -254,20 +289,40 @@ class Context:
                 return Forall(var, self.apply(body))
 
     def well_formed(self, t: Type) -> bool:
-        """Γ ⊢ A: every variable in `t` is bound by the context or a forall."""
+        """Γ ⊢ A: every variable in `t` is bound by the context or a forall,
+        and every declared type is applied correctly."""
+        return self.why_ill_formed(t) is None
+
+    def why_ill_formed(self, t: Type) -> str | None:
+        """None if Γ ⊢ A, otherwise what's wrong with A."""
         match t:
             case IntType():
-                return True
+                return None
             case TVar(name):
-                return self.has_tvar(name)
+                return None if self.has_tvar(name) else f"type variable {name} is not in scope"
             case Exists(name):
-                return self.has_exists(name)
+                return None if self.has_exists(name) else f"^{name} is not in scope"
             case FunType(param, result):
-                return self.well_formed(param) and self.well_formed(result)
-            case TCon(_, args):
-                return all(self.well_formed(arg) for arg in args)
+                return self.why_ill_formed(param) or self.why_ill_formed(result)
+            case TCon(name, args):
+                info = self.table.types.get(name)
+                if info is None:
+                    return f"unknown type {name}"
+                if len(args) != len(info.params):
+                    return (
+                        f"{name} expects {len(info.params)} argument(s)"
+                        f" but got {len(args)} in {show_type(t)}"
+                    )
+                for arg in args:
+                    # Arguments are monotypes, as instantiation is in the
+                    # paper, so declared types never need variance.
+                    if not is_monotype(arg):
+                        return f"type arguments must be monotypes: {show_type(t)}"
+                    if reason := self.why_ill_formed(arg):
+                        return reason
+                return None
             case Forall(var, body):
-                return self.extend(CTVar(var)).well_formed(body)
+                return self.extend(CTVar(var)).why_ill_formed(body)
 
     def split_arrow(self, name: str) -> tuple["Context", Exists, Exists]:
         """Γ[α̂]  becomes  Γ[α̂₂, α̂₁, α̂ = α̂₁ → α̂₂].

@@ -111,11 +111,9 @@ def _let_binding(
         with rule_frame("Let", f"inferring the type of {name}"):
             t, theta = synth(ctx, value)
         return theta.apply(t), theta
-    if not ctx.well_formed(annotation):
+    if reason := ctx.why_ill_formed(annotation):
         raise TypeCheckError(
-            "Let",
-            f"annotation {show_type(annotation)} on {name} mentions a type"
-            " variable that isn't in scope",
+            "Let", f"bad annotation {show_type(annotation)} on {name}: {reason}"
         )
     with rule_frame("Let", f"checking {name} against {show_type(annotation)}"):
         return annotation, check(ctx, value, annotation)
@@ -139,11 +137,9 @@ def synth(ctx: Context, expr: Expr) -> tuple[Type, Context]:
             return StaticInt, ctx
         case Anno(inner, annotated_type):
             # Anno
-            if not ctx.well_formed(annotated_type):
+            if reason := ctx.why_ill_formed(annotated_type):
                 raise TypeCheckError(
-                    "Anno",
-                    f"annotation {show_type(annotated_type)} mentions a type"
-                    " variable that isn't in scope",
+                    "Anno", f"bad annotation {show_type(annotated_type)}: {reason}"
                 )
             return annotated_type, check(ctx, inner, annotated_type)
         case Lam(param, body):
