@@ -324,17 +324,30 @@ class Context:
             case Forall(var, body):
                 return self.extend(CTVar(var)).why_ill_formed(body)
 
+    def split(self, name: str, n: int, build) -> tuple["Context", list[Exists]]:
+        """Γ[α̂]  becomes  Γ[α̂ₙ, …, α̂₁, α̂ = build(α̂₁, …, α̂ₙ)].
+
+        The new existentials go just before α̂, so anything α̂ could be
+        solved to can also mention them.
+        """
+        parts = [Exists(fresh(name)) for _ in range(n)]
+        ctx = self.replace(
+            CExists(name),
+            *(CExists(p.name) for p in reversed(parts)),
+            CSolved(name, build(*parts)),
+        )
+        return ctx, parts
+
     def split_arrow(self, name: str) -> tuple["Context", Exists, Exists]:
         """Γ[α̂]  becomes  Γ[α̂₂, α̂₁, α̂ = α̂₁ → α̂₂].
 
         Returns the new context with α̂₁ and α̂₂. Used by the instantiation
         rules when α̂ has to become a function type.
         """
-        a1, a2 = Exists(fresh(name)), Exists(fresh(name))
-        ctx = self.replace(
-            CExists(name),
-            CExists(a2.name),
-            CExists(a1.name),
-            CSolved(name, FunType(a1, a2)),
-        )
+        ctx, (a1, a2) = self.split(name, 2, FunType)
         return ctx, a1, a2
+
+    def split_tcon(self, name: str, con: str, n: int) -> tuple["Context", list[Exists]]:
+        """Γ[α̂]  becomes  Γ[α̂ₙ, …, α̂₁, α̂ = T α̂₁ … α̂ₙ], the declared-type
+        counterpart of split_arrow."""
+        return self.split(name, n, lambda *parts: TCon(con, tuple(parts)))

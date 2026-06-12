@@ -192,6 +192,19 @@ class TestContext(unittest.TestCase):
         self.assertEqual(delta.apply(Exists("a")), FunType(a1, a2))
         self.assertEqual(gamma.entries[1], CExists("a"))
 
+    def test_split_tcon(self):
+        gamma = Context().extend(CExists("a"), CVar("y", INT))
+        delta, parts = gamma.split_tcon("a", "Pair", 2)
+        self.assertEqual(
+            delta.entries,
+            (
+                CExists(parts[1].name),
+                CExists(parts[0].name),
+                CSolved("a", TCon("Pair", tuple(parts))),
+                CVar("y", INT),
+            ),
+        )
+
     def test_split_arrow_on_solved_fails(self):
         with self.assertRaises(TypeError):
             Context().extend(CSolved("a", INT)).split_arrow("a")

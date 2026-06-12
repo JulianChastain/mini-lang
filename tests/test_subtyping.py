@@ -1,6 +1,6 @@
 import unittest
 from lexer import lex
-from parser import Parser, IntType, FunType, TVar, Forall, Exists
+from parser import Parser, IntType, FunType, TVar, Forall, Exists, TCon
 from context import Context, CTVar, CExists, CSolved
 from subtyping import subtype
 
@@ -73,6 +73,43 @@ class TestSubtypingRules(unittest.TestCase):
         ctx = Context().extend(CExists("a"))
         with self.assertRaises(TypeError):
             subtype(ctx, FunType(INT, Exists("a")), Exists("a"))
+
+
+class TestDeclaredTypes(unittest.TestCase):
+    def list_of(self, t):
+        return TCon("List", (t,))
+
+    def test_same_type(self):
+        self.assertEqual(
+            subtype(Context(), self.list_of(INT), self.list_of(INT)), Context()
+        )
+
+    def test_different_arguments(self):
+        with self.assertRaises(TypeError) as caught:
+            subtype(Context(), self.list_of(INT), self.list_of(FunType(INT, INT)))
+        self.assertEqual(caught.exception.trace[0][0], "<:TCon")
+
+    def test_different_types(self):
+        with self.assertRaises(TypeError) as caught:
+            subtype(Context(), self.list_of(INT), TCon("Option", (INT,)))
+        self.assertEqual(caught.exception.rule, "<:TCon")
+
+    def test_solves_existential_argument(self):
+        ctx = Context().extend(CExists("a"))
+        delta = subtype(ctx, self.list_of(Exists("a")), self.list_of(INT))
+        self.assertEqual(delta.entries, (CSolved("a", INT),))
+
+    def test_forall_instantiates_into_declared_type(self):
+        # forall a. List a <: List Int, as Nil checks against List Int
+        self.assertEqual(
+            subtype(Context(), Forall("a", self.list_of(TVar("a"))), self.list_of(INT)),
+            Context(),
+        )
+
+    def test_occurs_check_through_declared_type(self):
+        ctx = Context().extend(CExists("a"))
+        with self.assertRaises(TypeError):
+            subtype(ctx, Exists("a"), self.list_of(Exists("a")))
 
 
 class TestWorkedExamples(unittest.TestCase):

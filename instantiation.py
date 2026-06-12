@@ -5,7 +5,7 @@
 #
 # Both expect A to already have Γ applied to it, α̂ to be unsolved in Γ, and
 # α̂ not to occur in A. Subtyping does that occurs check before calling in.
-from parser import Type, FunType, Forall, Exists, TVar
+from parser import Type, FunType, Forall, Exists, TVar, TCon
 from context import (
     Context,
     CExists,
@@ -83,6 +83,14 @@ def inst_l(ctx: Context, name: str, t: Type) -> Context:
             ctx = ctx.extend(CTVar(beta))
             delta = inst_l(ctx, name, substitute(body, var, TVar(beta)))
             return delta.drop(CTVar(beta))
+        case TCon(con, args):
+            # InstLTCon: like InstLArr, split α̂ into T α̂₁ … α̂ₙ in place.
+            # Arguments are monotypes, so each one is just an equation and
+            # the direction doesn't matter.
+            ctx, parts = ctx.split_tcon(name, con, len(args))
+            for part, arg in zip(parts, args):
+                ctx = inst_l(ctx, part.name, ctx.apply(arg))
+            return ctx
     _out_of_scope(ctx, name, t, "InstLSolve")
 
 
@@ -107,4 +115,10 @@ def inst_r(ctx: Context, t: Type, name: str) -> Context:
             ctx = ctx.extend(CMarker(beta), CExists(beta))
             delta = inst_r(ctx, substitute(body, var, Exists(beta)), name)
             return delta.drop(CMarker(beta))
+        case TCon(con, args):
+            # InstRTCon
+            ctx, parts = ctx.split_tcon(name, con, len(args))
+            for part, arg in zip(parts, args):
+                ctx = inst_r(ctx, ctx.apply(arg), part.name)
+            return ctx
     _out_of_scope(ctx, name, t, "InstRSolve")

@@ -3,7 +3,7 @@
 #   subtype:  Γ ⊢ A <: B ⊣ Δ
 #
 # Expects A and B to already have Γ applied to them.
-from parser import Type, IntType, FunType, TVar, Forall, Exists
+from parser import Type, IntType, FunType, TVar, Forall, Exists, TCon
 from context import (
     Context,
     CTVar,
@@ -18,7 +18,13 @@ from errors import TypeCheckError, rule_frame
 from instantiation import inst_l, inst_r
 
 # When no rule applies, blame the one the left-hand side would have needed.
-_RULE_FOR_LHS = {TVar: "<:Var", IntType: "<:Int", FunType: "<:→", Exists: "<:Exvar"}
+_RULE_FOR_LHS = {
+    TVar: "<:Var",
+    IntType: "<:Int",
+    FunType: "<:→",
+    Exists: "<:Exvar",
+    TCon: "<:TCon",
+}
 
 
 def _fail(a: Type, b: Type):
@@ -58,6 +64,13 @@ def subtype(ctx: Context, a: Type, b: Type) -> Context:
             with rule_frame("<:→", judgment):
                 theta = subtype(ctx, b1, a1)
                 return subtype(theta, theta.apply(a2), theta.apply(b2))
+        case TCon(n1, args1), TCon(n2, args2) if n1 == n2 and len(args1) == len(args2):
+            # <:TCon: arguments are monotypes, where subtyping is equality,
+            # so one invariant rule covers every declared type.
+            with rule_frame("<:TCon", judgment):
+                for x, y in zip(args1, args2):
+                    ctx = subtype(ctx, ctx.apply(x), ctx.apply(y))
+                return ctx
         case _, Forall(var, body):
             # <:∀R, tried before ∀L so that ∀a. A <: ∀b. B keeps b rigid
             with rule_frame("<:∀R", judgment):

@@ -1,5 +1,5 @@
 import unittest
-from parser import IntType, FunType, TVar, Forall, Exists
+from parser import IntType, FunType, TVar, Forall, Exists, TCon
 from context import Context, CVar, CTVar, CExists, CSolved
 from instantiation import inst_l, inst_r
 
@@ -77,6 +77,45 @@ class TestInstL(unittest.TestCase):
         ctx = Context().extend(CExists("a"))
         inst_l(ctx, "a", INT)
         self.assertEqual(ctx.entries, (CExists("a"),))
+
+
+class TestInstTCon(unittest.TestCase):
+    def setUp(self):
+        from lexer import lex
+        from parser import Parser
+        from types_table import declare_group
+
+        (group,) = Parser(
+            lex("type List a = Nil | Cons a (List a)  type Pair a b = Pair a b")
+        ).parse_program().items
+        self.base = Context(table=declare_group(Context().table, group))
+
+    def test_solve_declared_type_directly(self):
+        ctx = self.base.extend(CExists("a"))
+        t = TCon("List", (INT,))
+        self.assertEqual(inst_l(ctx, "a", t).entries, (CSolved("a", t),))
+
+    def test_inst_l_splits_into_declared_type(self):
+        # ^b is right of ^a, so ^a :≤= Pair ^b Int splits ^a into Pair ^a1 ^a2
+        ctx = self.base.extend(CExists("a"), CExists("b"))
+        delta = inst_l(ctx, "a", TCon("Pair", (Exists("b"), INT)))
+        a = delta.apply(Exists("a"))
+        self.assertEqual(a.name, "Pair")
+        self.assertIsInstance(a.args[0], Exists)
+        self.assertEqual(a.args[1], INT)
+        self.assertEqual(delta.apply(Exists("b")), a.args[0])
+
+    def test_inst_r_splits_into_declared_type(self):
+        ctx = self.base.extend(CExists("a"), CExists("b"))
+        delta = inst_r(ctx, TCon("List", (Exists("b"),)), "a")
+        a = delta.apply(Exists("a"))
+        self.assertEqual(a.name, "List")
+        self.assertEqual(delta.apply(Exists("b")), a.args[0])
+
+    def test_split_rejects_out_of_scope_argument(self):
+        ctx = self.base.extend(CExists("a"), CTVar("b"))
+        with self.assertRaises(TypeError):
+            inst_l(ctx, "a", TCon("List", (TVar("b"),)))
 
 
 class TestInstR(unittest.TestCase):
