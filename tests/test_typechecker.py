@@ -3,7 +3,8 @@ from type_checker import synth, check, app_synth, typecheck, show_expr, IntType,
 from lexer import lex
 from parser import Parser
 from parser import IntLit, Add, Lam, Var, Anno, Let, TVar, Forall, Exists
-from context import Context, CVar, CTVar, CExists
+from context import Context, CVar, CTVar, CExists, show_type
+from errors import TypeCheckError
 
 INT = IntType()
 
@@ -139,6 +140,62 @@ class TestLet(unittest.TestCase):
     def test_let_annotation_can_mention_outer_type_variable(self):
         src = "((/x -> let y : a = x in y) : forall a. a -> a) 5"
         self.assertEqual(typecheck(src), INT)
+
+
+DATA = """
+type Bool = True | False
+type Option a = None | Some a
+type List a = Nil | Cons a (List a)
+"""
+
+
+def typecheck_data(expr):
+    return show_type(typecheck(DATA + "let main = " + expr))
+
+
+class TestConstructors(unittest.TestCase):
+    def test_some(self):
+        self.assertEqual(typecheck_data("Some 1"), "Option Int")
+
+    def test_heterogeneous_list_rejected(self):
+        with self.assertRaises(TypeCheckError):
+            typecheck_data("Cons 1 (Cons True Nil)")
+
+    def test_none_checks_against_option_int(self):
+        self.assertEqual(typecheck_data("(None : Option Int)"), "Option Int")
+
+    def test_nullary_constructor_is_generalized(self):
+        self.assertEqual(typecheck_data("Nil"), "forall a. List a")
+
+    def test_constructor_is_a_function(self):
+        self.assertEqual(typecheck_data("Cons"), "forall a. a -> List a -> List a")
+
+    def test_partial_application(self):
+        self.assertEqual(typecheck_data("Cons 1"), "List Int -> List Int")
+
+    def test_nested(self):
+        self.assertEqual(
+            typecheck_data("Some (Cons True Nil)"), "Option (List Bool)"
+        )
+
+    def test_constructor_through_lambda(self):
+        self.assertEqual(
+            typecheck_data("/x -> Cons x Nil"), "forall a. a -> List a"
+        )
+
+    def test_unknown_constructor(self):
+        with self.assertRaises(TypeCheckError) as caught:
+            typecheck_data("Just 1")
+        self.assertEqual(caught.exception.rule, "Con")
+
+    def test_annotation_with_wrong_arity(self):
+        with self.assertRaises(TypeCheckError) as caught:
+            typecheck_data("(Nil : List)")
+        self.assertIn("expects 1", caught.exception.message)
+
+    def test_definitions_see_earlier_definitions(self):
+        t = typecheck(DATA + "let xs = Cons 1 Nil\nlet main = Cons 0 xs")
+        self.assertEqual(show_type(t), "List Int")
 
 
 class TestShowExpr(unittest.TestCase):

@@ -24,6 +24,10 @@ from parser import (
     Forall,
     Exists,
     TCon,
+    Con,
+    Definition,
+    DeclGroup,
+    Program,
 )
 from context import (
     Context,
@@ -34,7 +38,9 @@ from context import (
     show_type,
     fresh,
     reset_fresh,
+    TypeTable,
 )
+from types_table import declare_group
 from errors import TypeCheckError, rule_frame
 from subtyping import subtype
 
@@ -48,7 +54,7 @@ def show_expr(expr: Expr, prec: int = 0) -> str:
     atom (3).
     """
     match expr:
-        case Var(name):
+        case Var(name) | Con(name):
             return name
         case IntLit(value):
             return str(value)
@@ -93,7 +99,7 @@ def _rename_tvar(expr: Expr, name: str, new_name: str) -> Expr:
                 _rename_tvar(value, name, new_name),
                 _rename_tvar(body, name, new_name),
             )
-        case Var(_) | IntLit(_):
+        case Var(_) | Con(_) | IntLit(_):
             return expr
 
 
@@ -128,6 +134,13 @@ def synth(ctx: Context, expr: Expr) -> tuple[Type, Context]:
             if found is None:
                 raise TypeCheckError("Var", f"unbound variable {name}")
             return found, ctx
+        case Con(name):
+            # Con: a constructor is a polymorphic function from its fields
+            # to its type, so ∀App and →App handle applying it.
+            info = ctx.table.ctors.get(name)
+            if info is None:
+                raise TypeCheckError("Con", f"unknown constructor {name}")
+            return info.scheme, ctx
         case IntLit(_):
             # 1I⇒
             return StaticInt, ctx
@@ -299,16 +312,59 @@ def _replace_exists(t: Type, name: str, replacement: Type) -> Type:
     return t
 
 
-def typecheck_expr(expr: Expr, env: dict[str, Type] | None = None) -> Type:
+def typecheck_expr(
+    expr: Expr,
+    env: dict[str, Type] | None = None,
+    table: TypeTable | None = None,
+) -> Type:
     """Synthesize the type of a whole program, generalized.
 
-    `env` gives the closed types of names defined earlier, e.g. in the REPL.
+    `env` gives the closed types of names defined earlier, e.g. in the REPL,
+    and `table` the declared types.
     """
     reset_fresh()
-    ctx = Context().extend(*(CVar(n, t) for n, t in (env or {}).items()))
+    ctx = Context(table=table or TypeTable())
+    ctx = ctx.extend(*(CVar(n, t) for n, t in (env or {}).items()))
     t, delta = synth(ctx, expr)
     return generalize(delta, t)
 
 
+def typecheck_definition(
+    d: Definition, env: dict[str, Type], table: TypeTable
+) -> Type:
+    """The closed type of a top-level definition. It's checked like a whole
+    program, so leftover existentials are generalized; only lets inside an
+    expression stay monomorphic."""
+    value = d.value if d.type is None else Anno(d.value, d.type)
+    return typecheck_expr(value, env, table)
+
+
+def typecheck_program(
+    program: Program,
+    table: TypeTable | None = None,
+    env: dict[str, Type] | None = None,
+) -> tuple[TypeTable, dict[str, Type], Type | None]:
+    """Check every item in order. Returns the final table, the types of the
+    definitions, and the type of the final expression if there is one."""
+    table = table or TypeTable()
+    env = dict(env or {})
+    for item in program.items:
+        match item:
+            case DeclGroup():
+                table = declare_group(table, item)
+            case Definition(name):
+                env[name] = typecheck_definition(item, env, table)
+    if program.expr is None:
+        return table, env, None
+    return table, env, typecheck_expr(program.expr, env, table)
+
+
 def typecheck(src: str) -> Type:
-    return typecheck_expr(Parser(lex(src))())
+    """The type of a program's final expression, or of `main` if it has
+    none."""
+    _, env, t = typecheck_program(Parser(lex(src)).parse_program())
+    if t is None:
+        if "main" not in env:
+            raise TypeCheckError("Program", "nothing to check: no final expression or main")
+        t = env["main"]
+    return t
