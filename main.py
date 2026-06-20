@@ -1,4 +1,4 @@
-"""mini-lang: typecheck and run expressions.
+"""mini-lang: typecheck and run programs.
 
     uv run python main.py                 start a REPL
     uv run python main.py 'EXPR'          typecheck and run one expression
@@ -7,19 +7,19 @@
 """
 import os
 import sys
-from dataclasses import dataclass, field
 from lexer import lex
-from parser import Parser, Expr, Definition, Anno, Type
-from evaluator import eval, Closure
+from parser import Parser
 from context import show_type
+from evaluator import show_value
 from errors import TypeCheckError
-from type_checker import typecheck_expr
+from program import Session, Declared, Defined, Result, final_result
 from examples import ACCEPT, REJECT
 
 REPL_HELP = """\
   EXPR                     typecheck and evaluate, printing value : type
   let x = EXPR             define x for the rest of the session
   let x : TYPE = EXPR      define x with an annotated (maybe polymorphic) type
+  type T a = K1 | K2 a     declare a data type
   :t EXPR                  print the type without evaluating
   :env                     list definitions
   :q                       quit"""
@@ -47,59 +47,35 @@ def bold(s):
     return _style("1", s)
 
 
-def show_value(v) -> str:
-    return "<function>" if isinstance(v, Closure) else str(v)
-
-
-@dataclass
-class Session:
-    """Names defined so far, with their closed types and values."""
-
-    types: dict[str, Type] = field(default_factory=dict)
-    values: dict[str, object] = field(default_factory=dict)
-
-    def typecheck(self, expr: Expr) -> Type:
-        return typecheck_expr(expr, self.types)
-
-    def run(self, expr: Expr) -> tuple[Type, object]:
-        t = self.typecheck(expr)
-        return t, eval(expr, self.values)
-
-    def define(self, d: Definition) -> tuple[Type, object]:
-        # A top-level definition is checked like a whole program, so
-        # leftover existentials are generalized, as for any program. Only
-        # lets inside an expression stay monomorphic.
-        value = d.value if d.type is None else Anno(d.value, d.type)
-        t, v = self.run(value)
-        self.types[d.name] = t
-        self.values[d.name] = v
-        return t, v
-
-
-def run(src: str, session: Session | None = None) -> tuple[str, str]:
-    """Typecheck and evaluate `src`, returning (type, value) as strings."""
-    t, v = (session or Session()).run(Parser(lex(src))())
-    return show_type(t), show_value(v)
-
-
 def _print_error(err: Exception):
     if isinstance(err, TypeCheckError):
         head, *trace = str(err).split("\n")
         print(red(f"  type error {head}"))
         for line in trace:
             print(dim(f"  {line}"))
-    else:
+    elif isinstance(err, SyntaxError):
         print(red(f"  syntax error: {err}"))
+    else:
+        print(red(f"  runtime error: {err}"))
+
+
+_ERRORS = (SyntaxError, TypeCheckError, RuntimeError)
+
+
+def _print_result(result: Result):
+    print(f"  {show_value(result.value)} : {green(show_type(result.type))}")
 
 
 def report(src: str, session: Session | None = None) -> bool:
-    """Print `value : type` for `src`. Returns whether it typechecked."""
+    """Run a program and print its answer as `value : type`. Returns
+    whether it ran."""
     try:
-        t, v = run(src, session)
-    except (SyntaxError, TypeCheckError) as err:
+        result = final_result((session or Session()).run_source(src))
+    except _ERRORS as err:
         _print_error(err)
         return False
-    print(f"  {v} : {green(t)}")
+    if result is not None:
+        _print_result(result)
     return True
 
 
@@ -123,14 +99,15 @@ def repl_line(session: Session, line: str):
             t = session.typecheck(Parser(lex(line[3:]))())
             print(f"  {green(show_type(t))}")
         else:
-            parsed = Parser(lex(line)).parse_repl_input()
-            if isinstance(parsed, Definition):
-                t, v = session.define(parsed)
-                print(f"  {parsed.name} = {show_value(v)} : {green(show_type(t))}")
-            else:
-                t, v = session.run(parsed)
-                print(f"  {show_value(v)} : {green(show_type(t))}")
-    except (SyntaxError, TypeCheckError) as err:
+            for out in session.run_source(line):
+                match out:
+                    case Declared(names):
+                        print(dim(f"  declared {', '.join(names)}"))
+                    case Defined(name, t, v):
+                        print(f"  {name} = {show_value(v)} : {green(show_type(t))}")
+                    case Result():
+                        _print_result(out)
+    except _ERRORS as err:
         _print_error(err)
 
 

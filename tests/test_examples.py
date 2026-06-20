@@ -4,9 +4,7 @@ from context import show_type
 from errors import TypeCheckError
 from type_checker import typecheck
 from examples import ACCEPT, REJECT
-from main import run, Session
-from lexer import lex
-from parser import Parser
+from program import run, Session
 
 
 class TestAccepted(unittest.TestCase):
@@ -56,30 +54,60 @@ class TestPrograms(unittest.TestCase):
 
 
 class TestSession(unittest.TestCase):
-    def parse(self, src):
-        return Parser(lex(src)).parse_repl_input()
-
     def test_definitions_persist(self):
         session = Session()
-        session.define(self.parse("let inc = /x -> x + 1"))
+        session.run_source("let inc = /x -> x + 1")
         self.assertEqual(run("inc 41", session), ("Int", "42"))
 
     def test_top_level_definition_is_generalized(self):
         session = Session()
-        t, _ = session.define(self.parse("let id = /x -> x"))
-        self.assertEqual(show_type(t), "forall a. a -> a")
+        (defined,) = session.run_source("let id = /x -> x")
+        self.assertEqual(show_type(defined.type), "forall a. a -> a")
         self.assertEqual(run("id id 42", session), ("Int", "42"))
 
     def test_annotated_definition_keeps_its_annotation(self):
         session = Session()
-        t, _ = session.define(self.parse("let f : Int -> Int = /x -> x"))
-        self.assertEqual(show_type(t), "Int -> Int")
+        (defined,) = session.run_source("let f : Int -> Int = /x -> x")
+        self.assertEqual(show_type(defined.type), "Int -> Int")
 
     def test_failed_definition_is_not_stored(self):
         session = Session()
         with self.assertRaises(TypeCheckError):
-            session.define(self.parse("let bad = 1 2"))
+            session.run_source("let bad = 1 2")
         self.assertNotIn("bad", session.types)
+
+    def test_declarations_persist(self):
+        session = Session()
+        session.run_source("type Option a = None | Some a")
+        self.assertEqual(run("let x = 1 in Some x", session), ("Option Int", "Some 1"))
+
+
+class TestData(unittest.TestCase):
+    DATA = (
+        "type Option a = None | Some a\n"
+        "type List a = Nil | Cons a (List a)\n"
+    )
+
+    def test_constructor_values(self):
+        self.assertEqual(
+            run(self.DATA + "let main = Some (Cons 1 (Cons 2 Nil))"),
+            ("Option (List Int)", "Some (Cons 1 (Cons 2 Nil))"),
+        )
+
+    def test_partially_applied_constructor(self):
+        self.assertEqual(
+            run(self.DATA + "let cons1 = Cons 1\nlet main = cons1 (cons1 Nil)"),
+            ("List Int", "Cons 1 (Cons 1 Nil)"),
+        )
+
+    def test_partial_constructor_prints_as_function(self):
+        self.assertEqual(
+            run(self.DATA + "let main = Cons 1"), ("List Int -> List Int", "<function>")
+        )
+
+    def test_constructor_passed_to_function(self):
+        src = self.DATA + "let main = (/f -> f 1) Some"
+        self.assertEqual(run(src), ("Option Int", "Some 1"))
 
 
 class TestGeneralization(unittest.TestCase):
