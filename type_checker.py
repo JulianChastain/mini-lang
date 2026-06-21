@@ -63,9 +63,10 @@ def show_expr(expr: Expr, prec: int = 0) -> str:
             return f"({show_expr(inner, 1)} : {show_type(t)})"
         case Lam(param, body):
             s, own = f"/{param} -> {show_expr(body)}", 0
-        case Let(name, t, value, body):
+        case Let(name, t, value, body, rec):
+            keyword = "let rec" if rec else "let"
             annotation = "" if t is None else f" : {show_type(t)}"
-            s = f"let {name}{annotation} = {show_expr(value)} in {show_expr(body)}"
+            s = f"{keyword} {name}{annotation} = {show_expr(value)} in {show_expr(body)}"
             own = 0
         case Add(lhs, rhs):
             s, own = f"{show_expr(lhs, 1)} + {show_expr(rhs, 2)}", 1
@@ -92,19 +93,20 @@ def _rename_tvar(expr: Expr, name: str, new_name: str) -> Expr:
             return Add(
                 _rename_tvar(lhs, name, new_name), _rename_tvar(rhs, name, new_name)
             )
-        case Let(x, t, value, body):
+        case Let(x, t, value, body, rec):
             return Let(
                 x,
                 None if t is None else substitute(t, name, TVar(new_name)),
                 _rename_tvar(value, name, new_name),
                 _rename_tvar(body, name, new_name),
+                rec,
             )
         case Var(_) | Con(_) | IntLit(_):
             return expr
 
 
 def _let_binding(
-    ctx: Context, name: str, annotation: Type | None, value: Expr
+    ctx: Context, name: str, annotation: Type | None, value: Expr, rec: bool = False
 ) -> tuple[Type, Context]:
     """The type x gets in `let x [: A] = e1 in e2`, and the context after e1.
 
@@ -112,7 +114,20 @@ def _let_binding(
     Without one, x gets e1's synthesized type as is: the paper doesn't
     generalize, so an unannotated x is monomorphic (its existentials are
     shared by every use).
+
+    `let rec` requires the annotation and checks e1 with x : A already in
+    scope: Γ, x : A ⊢ e1 ⇐ A ⊣ Θ, x : A, Θ'.
     """
+    if rec:
+        if annotation is None:
+            raise TypeCheckError("LetRec", f"let rec {name} needs a type annotation")
+        if reason := ctx.why_ill_formed(annotation):
+            raise TypeCheckError(
+                "LetRec", f"bad annotation {show_type(annotation)} on {name}: {reason}"
+            )
+        with rule_frame("LetRec", f"checking {name} against {show_type(annotation)}"):
+            inner = ctx.extend(CVar(name, annotation))
+            return annotation, check(inner, value, annotation).drop(CVar(name, annotation))
     if annotation is None:
         with rule_frame("Let", f"inferring the type of {name}"):
             t, theta = synth(ctx, value)
@@ -168,11 +183,11 @@ def synth(ctx: Context, expr: Expr) -> tuple[Type, Context]:
             # →E
             fn_type, theta = synth(ctx, fn)
             return app_synth(theta, theta.apply(fn_type), arg)
-        case Let(name, annotation, value, body):
+        case Let(name, annotation, value, body, rec):
             # Let⇒. Unlike →I, only the x : A entry is removed afterwards:
             # existentials the body introduced after it may appear in the
             # result type, and types never mention term variables.
-            t, theta = _let_binding(ctx, name, annotation, value)
+            t, theta = _let_binding(ctx, name, annotation, value, rec)
             result, delta = synth(theta.extend(CVar(name, t)), body)
             return result, delta.replace(CVar(name, t))
     raise TypeCheckError("Sub", f"cannot synthesize a type for {expr}")
@@ -200,10 +215,10 @@ def check(ctx: Context, expr: Expr, expected_type: Type) -> Context:
             with rule_frame("→I", judgment):
                 ctx = ctx.extend(CVar(param, param_type))
                 return check(ctx, body, result_type).drop(CVar(param, param_type))
-        case Let(name, annotation, value, body), _:
+        case Let(name, annotation, value, body, rec), _:
             # Let⇐: like →I, the body is checked so a lambda in it still
             # gets the expected type pushed in.
-            t, theta = _let_binding(ctx, name, annotation, value)
+            t, theta = _let_binding(ctx, name, annotation, value, rec)
             return check(theta.extend(CVar(name, t)), body, expected_type).drop(
                 CVar(name, t)
             )
@@ -335,6 +350,9 @@ def typecheck_definition(
     """The closed type of a top-level definition. It's checked like a whole
     program, so leftover existentials are generalized; only lets inside an
     expression stay monomorphic."""
+    if d.rec:
+        # The annotation is required, so the recursive use can be given it.
+        return typecheck_expr(Anno(d.value, d.type), {**env, d.name: d.type}, table)
     value = d.value if d.type is None else Anno(d.value, d.type)
     return typecheck_expr(value, env, table)
 

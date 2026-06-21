@@ -4,13 +4,13 @@ from lexer import Token, TokenType
 
 # Conceptual Structure
 # PROGRAM := ITEM* EXPR?
-# ITEM := DECL+ | 'let' IDENT (':' TYPE)? '=' EXPR      (no `in`)
+# ITEM := DECL+ | 'let' 'rec'? IDENT (':' TYPE)? '=' EXPR      (no `in`)
 # DECL := 'type' UIDENT IDENT* '=' '|'? CON ('|' CON)*
 # CON := UIDENT TATOM*
 #
 # EXPR := LAMBDA | LET | ADD
 # LAMBDA := '/' IDENT '->' EXPR
-# LET := 'let' IDENT (':' TYPE)? '=' EXPR 'in' EXPR
+# LET := 'let' 'rec'? IDENT (':' TYPE)? '=' EXPR 'in' EXPR
 # ADD := APP ('+' APP)*
 # ATOM := IDENT | UIDENT | INT | '(' EXPR (':' TYPE)? ')'
 # APP := atom atom*
@@ -99,24 +99,27 @@ class Anno:
     type: Type
 
 
-# let name : type = value in body. `type` is None when unannotated.
+# let [rec] name : type = value in body. `type` is None when unannotated,
+# which `let rec` doesn't allow.
 @dataclass(frozen=True)
 class Let:
     name: str
     type: Type | None
     value: "Expr"
     body: "Expr"
+    rec: bool = False
 
 
 Expr = Var | Con | Lam | App | IntLit | Add | Anno | Let
 
 
-# A REPL definition: `let name : type = value` with no `in`.
+# A top-level definition: `let [rec] name : type = value` with no `in`.
 @dataclass(frozen=True)
 class Definition:
     name: str
     type: Type | None
     value: Expr
+    rec: bool = False
 
 
 # type Name params = Con1 fields | Con2 fields | ...
@@ -199,21 +202,28 @@ class Parser:
         return Lam(param.value, body)
 
     def parse_let_header(self):
-        """'let' IDENT (':' TYPE)? '=' EXPR, shared by `let ... in` and
-        REPL definitions."""
+        """'let' 'rec'? IDENT (':' TYPE)? '=' EXPR, shared by `let ... in`
+        and top-level definitions."""
         self.expect(TokenType.LET)
+        rec = self.peek().type == TokenType.REC
+        if rec:
+            self.incr()
         name = self.expect(TokenType.IDENTIFIER).value
         annotation = None
         if self.peek().type == TokenType.COLON:
             self.incr()
             annotation = self.parse_type()
+        elif rec:
+            # The paper doesn't generalize, and a recursive use would need
+            # the type before inferring it, so it has to be written down.
+            raise SyntaxError(f"let rec {name} needs a type annotation")
         self.expect(TokenType.EQUALS)
-        return name, annotation, self.parse_expr()
+        return name, annotation, self.parse_expr(), rec
 
     def parse_let(self):
-        name, annotation, value = self.parse_let_header()
+        name, annotation, value, rec = self.parse_let_header()
         self.expect(TokenType.IN)
-        return Let(name, annotation, value, self.parse_expr())
+        return Let(name, annotation, value, self.parse_expr(), rec)
 
     def parse_addexpr(self):
         lhs = self.parse_app()
@@ -338,11 +348,11 @@ class Parser:
                 items.append(DeclGroup(tuple(decls)))
             elif t == TokenType.LET:
                 start = self.Idx
-                name, annotation, value = self.parse_let_header()
+                name, annotation, value, rec = self.parse_let_header()
                 if self.peek().type == TokenType.IN:
                     self.Idx = start
                     break
-                items.append(Definition(name, annotation, value))
+                items.append(Definition(name, annotation, value, rec))
             else:
                 break
         expr = None if self.peek().type == TokenType.EOF else self.parse_expr()

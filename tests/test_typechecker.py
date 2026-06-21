@@ -198,6 +198,38 @@ class TestConstructors(unittest.TestCase):
         self.assertEqual(show_type(t), "List Int")
 
 
+class TestLetRec(unittest.TestCase):
+    def test_recursive_reference_typechecks(self):
+        self.assertEqual(
+            show_type(typecheck("let rec f : Int -> Int = /n -> f (n + 1) in f")),
+            "Int -> Int",
+        )
+
+    def test_recursive_use_must_match_annotation(self):
+        with self.assertRaises(TypeCheckError) as caught:
+            typecheck("let rec f : Int -> Int = /n -> f f in f")
+        self.assertEqual(caught.exception.trace[-1][0], "LetRec")
+
+    def test_polymorphic_recursion(self):
+        # The annotation makes f polymorphic inside its own body too.
+        src = (
+            "let rec f : forall a. a -> Int = /x -> f 1 + f (/y -> y) in f"
+        )
+        self.assertEqual(show_type(typecheck(src)), "forall a. a -> Int")
+
+    def test_annotation_required(self):
+        with self.assertRaises(SyntaxError):
+            typecheck("let rec f = /n -> f n in f")
+
+    def test_top_level_rec_definition(self):
+        t = typecheck("let rec loop : Int -> Int = /n -> loop n\nlet main = loop")
+        self.assertEqual(show_type(t), "Int -> Int")
+
+    def test_non_rec_let_cannot_refer_to_itself(self):
+        with self.assertRaises(TypeCheckError):
+            typecheck("let f : Int -> Int = /n -> f n in f")
+
+
 class TestShowExpr(unittest.TestCase):
     def test_round_trips_through_parser(self):
         for src in [
@@ -209,6 +241,7 @@ class TestShowExpr(unittest.TestCase):
             "((/x -> x) : forall a. a -> a) 1",
             "let id : forall a. a -> a = /x -> x in id 1",
             "(let x = 1 in x) + 1",
+            "let rec f : Int -> Int = /n -> f n in f 1",
         ]:
             expr = Parser(lex(src))()
             self.assertEqual(Parser(lex(show_expr(expr)))(), expr)

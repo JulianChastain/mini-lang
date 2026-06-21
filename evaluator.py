@@ -42,6 +42,17 @@ def _is_function(v: Value) -> bool:
     )
 
 
+def bind(env: dict[str, Value], name: str, value: Expr, rec: bool) -> dict[str, Value]:
+    """A copy of `env` with `name` bound to `value`'s result.
+
+    For `let rec`, closures made while evaluating `value` capture the new
+    environment, which gets `name` added afterwards, so they can call it.
+    """
+    new_env = dict(env)
+    new_env[name] = eval(value, new_env if rec else env)
+    return new_env
+
+
 def eval(e: Expr, env: dict[str, "Value"]):
     match e:
         case Var(name) | Con(name):
@@ -70,7 +81,7 @@ def eval(e: Expr, env: dict[str, "Value"]):
             return v
         case Anno(inner, _):
             return eval(inner, env)
-        case Let(name, _, value, body):
-            return eval(body, {**env, name: eval(value, env)})
+        case Let(name, _, value, body, rec):
+            return eval(body, bind(env, name, value, rec))
         case _:
             raise TypeError(f"Unknown ast node {e}")

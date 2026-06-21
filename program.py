@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from lexer import lex
 from parser import Parser, Program, DeclGroup, Definition, Expr, Type
 from context import TypeTable, show_type
-from evaluator import eval, ConValue, Value, show_value
+from evaluator import eval, bind, ConValue, Value, show_value
 from types_table import declare_group
 from type_checker import typecheck_expr, typecheck_definition
 
@@ -47,10 +47,11 @@ class Session:
 
     def define(self, d: Definition) -> Defined:
         t = typecheck_definition(d, self.types, self.table)
-        v = eval(d.value, self.values)
+        # bind copies the environment, so closures see the definitions made
+        # so far and not later redefinitions.
+        self.values = bind(self.values, d.name, d.value, d.rec)
         self.types[d.name] = t
-        self.values[d.name] = v
-        return Defined(d.name, t, v)
+        return Defined(d.name, t, self.values[d.name])
 
     def typecheck(self, expr: Expr) -> Type:
         return typecheck_expr(expr, self.types, self.table)

@@ -82,6 +82,30 @@ class TestSession(unittest.TestCase):
         self.assertEqual(run("let x = 1 in Some x", session), ("Option Int", "Some 1"))
 
 
+class TestRecursion(unittest.TestCase):
+    def test_rec_closure_sees_itself(self):
+        # Never called, but evaluating it must not fail, and the closure's
+        # environment must contain f.
+        session = Session()
+        session.run_source("let rec f : Int -> Int = /n -> f n")
+        self.assertIn("f", session.values["f"].env)
+
+    def test_rec_function_returning_data(self):
+        src = (
+            "type Stream = Next Int (Int -> Stream)\n"
+            "let rec from : Int -> Stream = /n -> Next n (/u -> from (n + 1))\n"
+            "let main = from 1"
+        )
+        t, v = run(src)
+        self.assertEqual(t, "Stream")
+        self.assertEqual(v, "Next 1 <function>")
+
+    def test_definitions_are_lexically_scoped(self):
+        session = Session()
+        session.run_source("let x = 1\nlet f = /y -> x\nlet x = 2")
+        self.assertEqual(run("f 0 + 0", session), ("Int", "1"))
+
+
 class TestData(unittest.TestCase):
     DATA = (
         "type Option a = None | Some a\n"
