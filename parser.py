@@ -8,9 +8,11 @@ from lexer import Token, TokenType
 # DECL := 'type' UIDENT IDENT* '=' '|'? CON ('|' CON)*
 # CON := UIDENT TATOM*
 #
-# EXPR := LAMBDA | LET | ADD
+# EXPR := LAMBDA | LET | MATCH | ADD
 # LAMBDA := '/' IDENT '->' EXPR
 # LET := 'let' 'rec'? IDENT (':' TYPE)? '=' EXPR 'in' EXPR
+# MATCH := 'match' EXPR 'with' '|'? BRANCH ('|' BRANCH)*
+# BRANCH := PAT '->' EXPR
 # ADD := APP ('+' APP)*
 # ATOM := IDENT | UIDENT | INT | '(' EXPR (':' TYPE)? ')'
 # APP := atom atom*
@@ -18,6 +20,9 @@ from lexer import Token, TokenType
 # TYPE := 'forall' IDENT+ '.' TYPE | TAPP ('->' TYPE)?
 # TAPP := UIDENT TATOM* | TATOM
 # TATOM := 'Int' | IDENT | UIDENT | '(' TYPE ')'
+#
+# PAT := UIDENT PATOM* | PATOM
+# PATOM := IDENT | '_' | INT | UIDENT | '(' PAT ')'
 
 
 @dataclass(frozen=True)
@@ -110,7 +115,38 @@ class Let:
     rec: bool = False
 
 
-Expr = Var | Con | Lam | App | IntLit | Add | Anno | Let
+@dataclass(frozen=True)
+class PVar:
+    name: str
+
+
+@dataclass(frozen=True)
+class PWild:
+    pass
+
+
+@dataclass(frozen=True)
+class PInt:
+    value: int
+
+
+@dataclass(frozen=True)
+class PCon:
+    name: str
+    args: tuple["Pattern", ...] = ()
+
+
+Pattern = PVar | PWild | PInt | PCon
+
+
+# match scrutinee with | pattern -> body | ...
+@dataclass(frozen=True)
+class Match:
+    scrutinee: "Expr"
+    branches: tuple[tuple[Pattern, "Expr"], ...]
+
+
+Expr = Var | Con | Lam | App | IntLit | Add | Anno | Let | Match
 
 
 # A top-level definition: `let [rec] name : type = value` with no `in`.
@@ -147,6 +183,13 @@ class Program:
 
 
 _ATOM_START = (TokenType.IDENTIFIER, TokenType.UIDENT, TokenType.LPAREN, TokenType.INT)
+_PATTERN_ATOM_START = (
+    TokenType.IDENTIFIER,
+    TokenType.UNDERSCORE,
+    TokenType.INT,
+    TokenType.UIDENT,
+    TokenType.LPAREN,
+)
 _TYPE_ATOM_START = (
     TokenType.INT_TYPE,
     TokenType.IDENTIFIER,
@@ -306,12 +349,60 @@ class Parser:
             return FunType(param, self.parse_type())
         return param
 
+    def parse_match(self) -> Match:
+        self.expect(TokenType.MATCH)
+        scrutinee = self.parse_expr()
+        self.expect(TokenType.WITH)
+        if self.peek().type == TokenType.BAR:
+            self.incr()
+        branches = [self.parse_branch()]
+        while self.peek().type == TokenType.BAR:
+            self.incr()
+            branches.append(self.parse_branch())
+        return Match(scrutinee, tuple(branches))
+
+    def parse_branch(self) -> tuple[Pattern, Expr]:
+        pattern = self.parse_pattern()
+        self.expect(TokenType.ARROW)
+        # The body extends as far right as possible, so a match nested in
+        # a body that isn't the last one needs parentheses.
+        return pattern, self.parse_expr()
+
+    def parse_pattern(self) -> Pattern:
+        if self.peek().type != TokenType.UIDENT:
+            return self.parse_pattern_atom()
+        name = self.expect(TokenType.UIDENT).value
+        args = []
+        while self.peek().type in _PATTERN_ATOM_START:
+            args.append(self.parse_pattern_atom())
+        return PCon(name, tuple(args))
+
+    def parse_pattern_atom(self) -> Pattern:
+        tok = self.peek()
+        self.incr()
+        match tok.type:
+            case TokenType.IDENTIFIER:
+                return PVar(tok.value)
+            case TokenType.UNDERSCORE:
+                return PWild()
+            case TokenType.INT:
+                return PInt(int(tok.value))
+            case TokenType.UIDENT:
+                return PCon(tok.value)
+            case TokenType.LPAREN:
+                pattern = self.parse_pattern()
+                self.expect(TokenType.RPAREN)
+                return pattern
+        raise SyntaxError(f"Expected a pattern but got {tok.type}")
+
     def parse_expr(self):
         t = self.peek().type
         if t == TokenType.LAMBDA:
             return self.parse_lam()
         if t == TokenType.LET:
             return self.parse_let()
+        if t == TokenType.MATCH:
+            return self.parse_match()
         return self.parse_addexpr()
 
     def __call__(self):

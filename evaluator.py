@@ -1,4 +1,20 @@
-from parser import Lam, Var, Con, App, Expr, Add, IntLit, Anno, Let
+from parser import (
+    Lam,
+    Var,
+    Con,
+    App,
+    Expr,
+    Add,
+    IntLit,
+    Anno,
+    Let,
+    Match,
+    Pattern,
+    PVar,
+    PWild,
+    PInt,
+    PCon,
+)
 from dataclasses import dataclass
 
 
@@ -19,6 +35,29 @@ class ConValue:
 
 
 Value = Closure | ConValue | int | str
+
+
+class MatchError(RuntimeError):
+    """No branch of a match fit the value."""
+
+
+def match_pattern(p: Pattern, v: Value, bindings: dict[str, Value]) -> bool:
+    """Whether `v` fits `p`, adding the pattern's variables to `bindings`."""
+    match p:
+        case PVar(name):
+            bindings[name] = v
+            return True
+        case PWild():
+            return True
+        case PInt(n):
+            return v == n
+        case PCon(name, args):
+            return (
+                isinstance(v, ConValue)
+                and v.name == name
+                and len(v.args) == len(args)
+                and all(match_pattern(q, w, bindings) for q, w in zip(args, v.args))
+            )
 
 
 def show_value(v: Value) -> str:
@@ -81,6 +120,14 @@ def eval(e: Expr, env: dict[str, "Value"]):
             return v
         case Anno(inner, _):
             return eval(inner, env)
+        case Match(scrutinee, branches):
+            # The first branch that fits wins.
+            v = eval(scrutinee, env)
+            for pattern, body in branches:
+                bindings: dict[str, Value] = {}
+                if match_pattern(pattern, v, bindings):
+                    return eval(body, {**env, **bindings})
+            raise MatchError(f"no branch matches {show_value(v)}")
         case Let(name, _, value, body, rec):
             return eval(body, bind(env, name, value, rec))
         case _:

@@ -28,6 +28,12 @@ from parser import (
     Definition,
     DeclGroup,
     Program,
+    Match,
+    Pattern,
+    PVar,
+    PWild,
+    PInt,
+    PCon,
 )
 from context import (
     Context,
@@ -68,11 +74,45 @@ def show_expr(expr: Expr, prec: int = 0) -> str:
             annotation = "" if t is None else f" : {show_type(t)}"
             s = f"{keyword} {name}{annotation} = {show_expr(value)} in {show_expr(body)}"
             own = 0
+        case Match(scrutinee, branches):
+            parts = [f"match {show_expr(scrutinee)} with"]
+            for i, (pattern, body) in enumerate(branches):
+                b = show_expr(body)
+                if i < len(branches) - 1 and _ends_with_match(body):
+                    b = f"({b})"
+                parts.append(f"| {show_pattern(pattern)} -> {b}")
+            s, own = " ".join(parts), 0
         case Add(lhs, rhs):
             s, own = f"{show_expr(lhs, 1)} + {show_expr(rhs, 2)}", 1
         case App(fn, arg):
             s, own = f"{show_expr(fn, 2)} {show_expr(arg, 3)}", 2
     return f"({s})" if prec > own else s
+
+
+def show_pattern(p: Pattern, atom: bool = False) -> str:
+    """Print a pattern; `atom` parenthesizes a constructor with arguments."""
+    match p:
+        case PVar(name):
+            return name
+        case PWild():
+            return "_"
+        case PInt(n):
+            return str(n)
+        case PCon(name, ()):
+            return name
+        case PCon(name, args):
+            s = " ".join([name] + [show_pattern(q, True) for q in args])
+            return f"({s})" if atom else s
+
+
+def _ends_with_match(expr: Expr) -> bool:
+    """Whether a match would swallow branches printed after `expr`."""
+    match expr:
+        case Match():
+            return True
+        case Lam(_, body) | Let(_, _, _, body):
+            return _ends_with_match(body)
+    return False
 
 
 def _rename_tvar(expr: Expr, name: str, new_name: str) -> Expr:
@@ -100,6 +140,11 @@ def _rename_tvar(expr: Expr, name: str, new_name: str) -> Expr:
                 _rename_tvar(value, name, new_name),
                 _rename_tvar(body, name, new_name),
                 rec,
+            )
+        case Match(scrutinee, branches):
+            return Match(
+                _rename_tvar(scrutinee, name, new_name),
+                tuple((p, _rename_tvar(b, name, new_name)) for p, b in branches),
             )
         case Var(_) | Con(_) | IntLit(_):
             return expr
@@ -190,6 +235,8 @@ def synth(ctx: Context, expr: Expr) -> tuple[Type, Context]:
             t, theta = _let_binding(ctx, name, annotation, value, rec)
             result, delta = synth(theta.extend(CVar(name, t)), body)
             return result, delta.replace(CVar(name, t))
+        case Match():
+            raise TypeCheckError("Match", "pattern matching can't be typechecked yet")
     raise TypeCheckError("Sub", f"cannot synthesize a type for {expr}")
 
 
