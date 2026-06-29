@@ -2,7 +2,10 @@ import unittest
 from lexer import lex
 from parser import Parser, Match, PVar, PWild, PInt, PCon, Var, IntLit, App, Con
 from evaluator import eval, ConValue, MatchError, show_value
-from type_checker import show_expr
+from type_checker import show_expr, typecheck
+from context import show_type
+from errors import TypeCheckError
+from program import run as run_program
 
 DECLS = {"Nil": 0, "Cons": 2, "None": 0, "Some": 1, "Leaf": 0, "Node": 3}
 
@@ -116,3 +119,103 @@ class TestRunMatch(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+DATA = """
+type Bool = True | False
+type Option a = None | Some a
+type List a = Nil | Cons a (List a)
+type Tree a = Leaf | Node (Tree a) a (Tree a)
+"""
+
+
+def type_of(src):
+    return show_type(typecheck(DATA + "let main = " + src))
+
+
+class TestTypeMatch(unittest.TestCase):
+    def test_length(self):
+        self.assertEqual(type_of(LENGTH + "length"), "forall a. List a -> Int")
+
+    def test_map(self):
+        self.assertEqual(
+            type_of(MAP + "map"), "forall a b. (a -> b) -> List a -> List b"
+        )
+
+    def test_foldr(self):
+        src = (
+            "let rec foldr : forall a b. (a -> b -> b) -> b -> List a -> b ="
+            " /f -> /z -> /xs -> match xs with"
+            " | Nil -> z"
+            " | Cons x rest -> f x (foldr f z rest) in foldr"
+        )
+        self.assertEqual(type_of(src), "forall a b. (a -> b -> b) -> b -> List a -> b")
+
+    def test_length_and_map_run(self):
+        src = DATA + "let main = " + LENGTH + MAP + "length (map (/x -> x + 1) (Cons 1 (Cons 2 Nil)))"
+        self.assertEqual(run_program(src), ("Int", "2"))
+        src = DATA + "let main = " + MAP + "map (/x -> Some x) (Cons 1 (Cons 2 Nil))"
+        self.assertEqual(
+            run_program(src), ("List (Option Int)", "Cons (Some 1) (Cons (Some 2) Nil)")
+        )
+
+    def test_field_type_mismatch_rejected(self):
+        src = (
+            "(/xs -> match xs with | Cons x _ -> x + 1 | Nil -> 0)"
+            " (Cons True Nil)"
+        )
+        with self.assertRaises(TypeCheckError):
+            type_of(src)
+
+    def test_annotated_list_bool_rejects_arithmetic(self):
+        src = (
+            "((/xs -> match xs with | Cons x _ -> x + 1 | Nil -> 0)"
+            " : List Bool -> Int)"
+        )
+        with self.assertRaises(TypeCheckError) as caught:
+            type_of(src)
+        self.assertEqual(caught.exception.message, "Bool is not a subtype of Int")
+
+    def test_unannotated_match_is_inferred(self):
+        # The scrutinee's α̂ is split by the first constructor pattern and
+        # the result gets a fresh β̂, like a lambda's.
+        self.assertEqual(
+            type_of("/o -> match o with | None -> 0 | Some n -> n + 1"),
+            "Option Int -> Int",
+        )
+
+    def test_polymorphic_inferred_match(self):
+        self.assertEqual(
+            type_of("/o -> /d -> match o with | None -> d | Some x -> x"),
+            "forall a. Option a -> a -> a",
+        )
+
+    def test_integer_patterns(self):
+        self.assertEqual(type_of("/n -> match n with | 0 -> True | _ -> False"), "Int -> Bool")
+
+    def test_branches_must_agree(self):
+        with self.assertRaises(TypeCheckError):
+            type_of("/o -> match o with | None -> 0 | Some x -> True")
+
+    def test_pattern_constructor_from_wrong_type(self):
+        with self.assertRaises(TypeCheckError) as caught:
+            type_of("match Some 1 with | Nil -> 0 | Some x -> x")
+        self.assertEqual(caught.exception.trace[0][0], "PCon")
+
+    def test_wrong_number_of_fields(self):
+        with self.assertRaises(TypeCheckError) as caught:
+            type_of("match Some 1 with | Some -> 0")
+        self.assertEqual(caught.exception.rule, "PCon")
+
+    def test_variable_bound_twice(self):
+        with self.assertRaises(TypeCheckError) as caught:
+            type_of("match Cons 1 Nil with | Cons x x -> x")
+        self.assertEqual(caught.exception.rule, "PVar")
+
+    def test_branch_variables_do_not_leak(self):
+        with self.assertRaises(TypeCheckError) as caught:
+            type_of("match Some 1 with | Some x -> 0 | None -> x")
+        self.assertEqual(caught.exception.rule, "Var")
+
+    def test_polymorphic_scrutinee_is_instantiated(self):
+        self.assertEqual(type_of("match Nil with | Nil -> 0 | Cons x _ -> x"), "Int")

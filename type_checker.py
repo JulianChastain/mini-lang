@@ -29,17 +29,13 @@ from parser import (
     DeclGroup,
     Program,
     Match,
-    Pattern,
-    PVar,
-    PWild,
-    PInt,
-    PCon,
 )
 from context import (
     Context,
     CVar,
     CTVar,
     CExists,
+    CMarker,
     substitute,
     show_type,
     fresh,
@@ -47,6 +43,7 @@ from context import (
     TypeTable,
 )
 from types_table import declare_group
+from patterns import check_pattern, show_pattern, pattern_vars, instantiate
 from errors import TypeCheckError, rule_frame
 from subtyping import subtype
 
@@ -87,22 +84,6 @@ def show_expr(expr: Expr, prec: int = 0) -> str:
         case App(fn, arg):
             s, own = f"{show_expr(fn, 2)} {show_expr(arg, 3)}", 2
     return f"({s})" if prec > own else s
-
-
-def show_pattern(p: Pattern, atom: bool = False) -> str:
-    """Print a pattern; `atom` parenthesizes a constructor with arguments."""
-    match p:
-        case PVar(name):
-            return name
-        case PWild():
-            return "_"
-        case PInt(n):
-            return str(n)
-        case PCon(name, ()):
-            return name
-        case PCon(name, args):
-            s = " ".join([name] + [show_pattern(q, True) for q in args])
-            return f"({s})" if atom else s
 
 
 def _ends_with_match(expr: Expr) -> bool:
@@ -236,7 +217,10 @@ def synth(ctx: Context, expr: Expr) -> tuple[Type, Context]:
             result, delta = synth(theta.extend(CVar(name, t)), body)
             return result, delta.replace(CVar(name, t))
         case Match():
-            raise TypeCheckError("Match", "pattern matching can't be typechecked yet")
+            # Match⇒: like →I⇒, guess β̂ for the result and check against it.
+            b = fresh("b")
+            ctx = ctx.extend(CExists(b))
+            return Exists(b), _check_match(ctx, expr, Exists(b))
     raise TypeCheckError("Sub", f"cannot synthesize a type for {expr}")
 
 
@@ -262,6 +246,9 @@ def check(ctx: Context, expr: Expr, expected_type: Type) -> Context:
             with rule_frame("→I", judgment):
                 ctx = ctx.extend(CVar(param, param_type))
                 return check(ctx, body, result_type).drop(CVar(param, param_type))
+        case Match(), _:
+            with rule_frame("Match", judgment):
+                return _check_match(ctx, expr, expected_type)
         case Let(name, annotation, value, body, rec), _:
             # Let⇐: like →I, the body is checked so a lambda in it still
             # gets the expected type pushed in.
@@ -273,6 +260,33 @@ def check(ctx: Context, expr: Expr, expected_type: Type) -> Context:
     with rule_frame("Sub", judgment):
         synthed, theta = synth(ctx, expr)
         return subtype(theta, theta.apply(synthed), theta.apply(expected_type))
+
+
+def _check_match(ctx: Context, expr: Match, expected_type: Type) -> Context:
+    """Match⇐: Γ ⊢ match e with | p -> e' ... ⇐ C ⊣ Δ
+
+    The scrutinee's type is synthesized (and instantiated, if it's
+    polymorphic). Each branch then runs between a marker and a drop back to
+    it: Γ, ▶ ⊢ p ⇐ A ⊣ Θ, then Θ ⊢ e' ⇐ [Θ]C ⊣ Δ, ▶, Δ'. Dropping removes
+    the branch's variables and any existentials its patterns introduced.
+    """
+    t, ctx = synth(ctx, expr.scrutinee)
+    ctx, t = instantiate(ctx, ctx.apply(t))
+    for pattern, body in expr.branches:
+        names = pattern_vars(pattern)
+        for name in names:
+            if names.count(name) > 1:
+                raise TypeCheckError(
+                    "PVar", f"{name} is bound twice in {show_pattern(pattern)}"
+                )
+        marker = fresh("m")
+        branch = f"checking the branch {show_pattern(pattern)} -> {show_expr(body)}"
+        with rule_frame("Match", branch):
+            ctx = ctx.extend(CMarker(marker))
+            ctx = check_pattern(ctx, pattern, ctx.apply(t))
+            ctx = check(ctx, body, ctx.apply(expected_type))
+            ctx = ctx.drop(CMarker(marker))
+    return ctx
 
 
 def app_synth(ctx: Context, fn_type: Type, arg: Expr) -> tuple[Type, Context]:
