@@ -219,3 +219,97 @@ class TestTypeMatch(unittest.TestCase):
 
     def test_polymorphic_scrutinee_is_instantiated(self):
         self.assertEqual(type_of("match Nil with | Nil -> 0 | Cons x _ -> x"), "Int")
+
+
+POLY = DATA + """
+type Poly = Poly (forall a. a -> a)
+type Church = Church (forall a. (a -> a) -> a -> a)
+"""
+
+
+def poly_type(src):
+    return show_type(typecheck(POLY + "let main = " + src))
+
+
+class TestPolymorphicFields(unittest.TestCase):
+    """What the 2013 paper buys: a field can hold a polymorphic function,
+    and the matched variable keeps that type, so one branch can use it at
+    several types."""
+
+    USE_TWICE = (
+        "/p -> match p with"
+        " | Poly f -> (match f True with | True -> f 1 | False -> 0)"
+    )
+
+    def test_field_used_at_two_types_in_one_branch(self):
+        self.assertEqual(poly_type(self.USE_TWICE), "Poly -> Int")
+
+    def test_it_runs(self):
+        src = POLY + "let main = (" + self.USE_TWICE + ") (Poly (/x -> x))"
+        self.assertEqual(run_program(src), ("Int", "1"))
+
+    def test_constructor_checks_its_argument_is_polymorphic(self):
+        with self.assertRaises(TypeCheckError):
+            poly_type("Poly (/x -> x + 1)")
+
+    def test_constructor_accepts_polymorphic_argument(self):
+        self.assertEqual(poly_type("Poly (/x -> x)"), "Poly")
+
+    def test_without_the_field_annotation_it_fails(self):
+        # The same use through an ordinary monomorphic argument is rejected.
+        with self.assertRaises(TypeCheckError):
+            poly_type("/f -> match f True with | True -> f 1 | False -> 0")
+
+    def test_church_numeral_in_a_box(self):
+        src = (
+            "let two = Church (/s -> /z -> s (s z)) in "
+            "match two with | Church n -> n (/x -> x + 1) 0 + n (/x -> x) 40"
+        )
+        self.assertEqual(poly_type(src), "Int")
+        self.assertEqual(run_program(POLY + "let main = " + src), ("Int", "42"))
+
+    def test_polymorphic_field_nested_in_another_type(self):
+        src = (
+            "/o -> match o with"
+            " | Some (Poly f) -> (match f False with | True -> 0 | False -> f 1)"
+            " | None -> 0"
+        )
+        self.assertEqual(poly_type(src), "Option Poly -> Int")
+
+
+class TestNestedAndShadowedPatterns(unittest.TestCase):
+    def test_deeply_nested_pattern(self):
+        src = (
+            "/t -> match t with"
+            " | Node (Node Leaf x Leaf) y (Node (Node Leaf z Leaf) w Leaf) -> x + y + z + w"
+            " | _ -> 0"
+        )
+        self.assertEqual(type_of(src), "Tree Int -> Int")
+        tree = "(Node (Node Leaf 1 Leaf) 2 (Node (Node Leaf 3 Leaf) 4 Leaf))"
+        self.assertEqual(run_program(DATA + f"let main = ({src}) {tree}"), ("Int", "10"))
+
+    def test_nested_patterns_solve_inner_types(self):
+        self.assertEqual(
+            type_of("/x -> match x with | Some (Cons (Some n) Nil) -> n + 1 | _ -> 0"),
+            "Option (List (Option Int)) -> Int",
+        )
+
+    def test_pattern_variable_shadows_outer_binding(self):
+        src = "let x = True in match Some 1 with | Some x -> x + 1 | None -> 0"
+        self.assertEqual(type_of(src), "Int")
+        self.assertEqual(run_program(DATA + "let main = " + src), ("Int", "2"))
+
+    def test_outer_binding_visible_again_after_branch(self):
+        src = (
+            "let x = True in match (match Some 1 with | Some x -> x | None -> 0) with"
+            " | 1 -> x | _ -> x"
+        )
+        self.assertEqual(type_of(src), "Bool")
+
+    def test_nested_match_shadows(self):
+        src = (
+            "/o -> match o with"
+            " | Some x -> (match x with | Some x -> x | None -> 0)"
+            " | None -> 0"
+        )
+        self.assertEqual(type_of(src), "Option (Option Int) -> Int")
