@@ -221,12 +221,20 @@ class Context:
     # live beside the ordered entries rather than in them. Every rule
     # threads Γ to Δ, which carries the table along with no extra plumbing.
     table: TypeTable = field(default_factory=TypeTable)
+    # Every match checked so far, with its scrutinee's type, for the
+    # exhaustiveness pass. Like the table it survives dropping scopes: the
+    # type's existentials may only be solved later, so it's resolved
+    # against the final context once the whole program is typed.
+    matches: tuple[tuple[object, Type], ...] = ()
 
     def __str__(self) -> str:
         return ", ".join(show_entry(e) for e in self.entries)
 
     def _with(self, entries: tuple[Entry, ...]) -> "Context":
         return replace(self, entries=entries)
+
+    def record_match(self, match: object, t: Type) -> "Context":
+        return replace(self, matches=self.matches + ((match, t),))
 
     def extend(self, *entries: Entry) -> "Context":
         """Γ, entries"""

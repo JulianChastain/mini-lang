@@ -44,6 +44,7 @@ from context import (
 )
 from types_table import declare_group
 from patterns import check_pattern, show_pattern, pattern_vars, instantiate
+from exhaustiveness import missing_case
 from errors import TypeCheckError, rule_frame
 from subtyping import subtype
 
@@ -272,6 +273,7 @@ def _check_match(ctx: Context, expr: Match, expected_type: Type) -> Context:
     """
     t, ctx = synth(ctx, expr.scrutinee)
     ctx, t = instantiate(ctx, ctx.apply(t))
+    ctx = ctx.record_match(expr, t)
     for pattern, body in expr.branches:
         names = pattern_vars(pattern)
         for name in names:
@@ -402,7 +404,22 @@ def typecheck_expr(
     ctx = Context(table=table or TypeTable())
     ctx = ctx.extend(*(CVar(n, t) for n, t in (env or {}).items()))
     t, delta = synth(ctx, expr)
+    check_matches(delta)
     return generalize(delta, t)
+
+
+def check_matches(ctx: Context):
+    """Check every recorded match for missing cases, now that the final
+    context has solved as much of each scrutinee's type as it ever will."""
+    for match, t in ctx.matches:
+        t = ctx.apply(t)
+        missing = missing_case(ctx.table, t, [p for p, _ in match.branches])
+        if missing is not None:
+            raise TypeCheckError(
+                "Match",
+                f"match {show_expr(match.scrutinee)} with ... doesn't cover every"
+                f" {show_type(t)}; missing: {show_pattern(missing)}",
+            )
 
 
 def typecheck_definition(
