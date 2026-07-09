@@ -44,7 +44,7 @@ from context import (
 )
 from types_table import declare_group
 from patterns import check_pattern, show_pattern, pattern_vars, instantiate
-from exhaustiveness import missing_case
+from exhaustiveness import missing_case, useless_branches
 from errors import TypeCheckError, rule_frame
 from subtyping import subtype
 
@@ -394,45 +394,63 @@ def typecheck_expr(
     expr: Expr,
     env: dict[str, Type] | None = None,
     table: TypeTable | None = None,
+    warnings: list[str] | None = None,
 ) -> Type:
     """Synthesize the type of a whole program, generalized.
 
     `env` gives the closed types of names defined earlier, e.g. in the REPL,
-    and `table` the declared types.
+    and `table` the declared types. Warnings, such as branches that can
+    never match, are appended to `warnings` if it's given.
     """
     reset_fresh()
     ctx = Context(table=table or TypeTable())
     ctx = ctx.extend(*(CVar(n, t) for n, t in (env or {}).items()))
     t, delta = synth(ctx, expr)
-    check_matches(delta)
+    found = check_matches(delta)
+    if warnings is not None:
+        warnings.extend(found)
     return generalize(delta, t)
 
 
-def check_matches(ctx: Context):
-    """Check every recorded match for missing cases, now that the final
-    context has solved as much of each scrutinee's type as it ever will."""
+def check_matches(ctx: Context) -> list[str]:
+    """Check every recorded match, now that the final context has solved as
+    much of each scrutinee's type as it ever will. A missing case is an
+    error; branches that can never match are returned as warnings."""
+    warnings = []
     for match, t in ctx.matches:
         t = ctx.apply(t)
-        missing = missing_case(ctx.table, t, [p for p, _ in match.branches])
+        patterns = [p for p, _ in match.branches]
+        missing = missing_case(ctx.table, t, patterns)
         if missing is not None:
             raise TypeCheckError(
                 "Match",
                 f"match {show_expr(match.scrutinee)} with ... doesn't cover every"
                 f" {show_type(t)}; missing: {show_pattern(missing)}",
             )
+        for i in useless_branches(ctx.table, t, patterns):
+            warnings.append(
+                f"in match {show_expr(match.scrutinee)} with ..., branch {i + 1}"
+                f" (| {show_pattern(patterns[i])} -> ...) can never match"
+            )
+    return warnings
 
 
 def typecheck_definition(
-    d: Definition, env: dict[str, Type], table: TypeTable
+    d: Definition,
+    env: dict[str, Type],
+    table: TypeTable,
+    warnings: list[str] | None = None,
 ) -> Type:
     """The closed type of a top-level definition. It's checked like a whole
     program, so leftover existentials are generalized; only lets inside an
     expression stay monomorphic."""
     if d.rec:
         # The annotation is required, so the recursive use can be given it.
-        return typecheck_expr(Anno(d.value, d.type), {**env, d.name: d.type}, table)
+        return typecheck_expr(
+            Anno(d.value, d.type), {**env, d.name: d.type}, table, warnings
+        )
     value = d.value if d.type is None else Anno(d.value, d.type)
-    return typecheck_expr(value, env, table)
+    return typecheck_expr(value, env, table, warnings)
 
 
 def typecheck_program(

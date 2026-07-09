@@ -151,6 +151,16 @@ class _Checker:
         return _rebuild(missing, [PWild()] * missing.arity)
 
 
+def useless_branches(
+    table: TypeTable, t: Type | None, patterns: list[Pattern]
+) -> list[int]:
+    """Indices of branches that can never match: every value they'd match
+    is already taken by an earlier branch."""
+    checker = _Checker(table)
+    rows = [[p] for p in patterns]
+    return [i for i in range(len(rows)) if checker.useful(rows[:i], rows[i], [t]) is None]
+
+
 def missing_case(table: TypeTable, t: Type | None, patterns: list[Pattern]) -> Pattern | None:
     """An example of a value of type t that no pattern matches, or None if
     the patterns are exhaustive."""

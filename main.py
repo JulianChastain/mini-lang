@@ -12,7 +12,7 @@ from parser import Parser
 from context import show_type
 from evaluator import show_value
 from errors import TypeCheckError
-from program import Session, Declared, Defined, Result, final_result
+from program import Session, Declared, Defined, Result, Warning, final_result
 from examples import ACCEPT, REJECT
 
 REPL_HELP = """\
@@ -37,6 +37,10 @@ def green(s):
 
 def red(s):
     return _style("31", s)
+
+
+def yellow(s):
+    return _style("33", s)
 
 
 def dim(s):
@@ -70,10 +74,14 @@ def report(src: str, session: Session | None = None) -> bool:
     """Run a program and print its answer as `value : type`. Returns
     whether it ran."""
     try:
-        result = final_result((session or Session()).run_source(src))
+        outputs = (session or Session()).run_source(src)
     except _ERRORS as err:
         _print_error(err)
         return False
+    for out in outputs:
+        if isinstance(out, Warning):
+            print(yellow(f"  warning: {out.message}"))
+    result = final_result(outputs)
     if result is not None:
         _print_result(result)
     return True
@@ -107,6 +115,8 @@ def repl_line(session: Session, line: str):
                         print(f"  {name} = {show_value(v)} : {green(show_type(t))}")
                     case Result():
                         _print_result(out)
+                    case Warning(message):
+                        print(yellow(f"  warning: {message}"))
     except _ERRORS as err:
         _print_error(err)
 

@@ -27,7 +27,12 @@ class Result:
     value: Value
 
 
-Output = Declared | Defined | Result
+@dataclass(frozen=True)
+class Warning:
+    message: str
+
+
+Output = Declared | Defined | Result | Warning
 
 
 @dataclass
@@ -45,8 +50,8 @@ class Session:
                 self.values[con] = ConValue(con, len(fields))
         return Declared(tuple(d.name for d in group.decls))
 
-    def define(self, d: Definition) -> Defined:
-        t = typecheck_definition(d, self.types, self.table)
+    def define(self, d: Definition, warnings: list[str] | None = None) -> Defined:
+        t = typecheck_definition(d, self.types, self.table, warnings)
         # bind copies the environment, so closures see the definitions made
         # so far and not later redefinitions.
         self.values = bind(self.values, d.name, d.value, d.rec)
@@ -56,8 +61,8 @@ class Session:
     def typecheck(self, expr: Expr) -> Type:
         return typecheck_expr(expr, self.types, self.table)
 
-    def evaluate(self, expr: Expr) -> Result:
-        t = self.typecheck(expr)
+    def evaluate(self, expr: Expr, warnings: list[str] | None = None) -> Result:
+        t = typecheck_expr(expr, self.types, self.table, warnings)
         return Result(t, eval(expr, self.values))
 
     def run_program(self, program: Program) -> list[Output]:
@@ -65,13 +70,17 @@ class Session:
         before it stay declared and defined."""
         outputs: list[Output] = []
         for item in program.items:
+            warnings: list[str] = []
             match item:
                 case DeclGroup():
-                    outputs.append(self.declare(item))
+                    out = self.declare(item)
                 case Definition():
-                    outputs.append(self.define(item))
+                    out = self.define(item, warnings)
+            outputs += [Warning(w) for w in warnings] + [out]
         if program.expr is not None:
-            outputs.append(self.evaluate(program.expr))
+            warnings = []
+            out = self.evaluate(program.expr, warnings)
+            outputs += [Warning(w) for w in warnings] + [out]
         return outputs
 
     def run_source(self, src: str) -> list[Output]:
