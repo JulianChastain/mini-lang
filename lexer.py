@@ -22,6 +22,9 @@ class TokenType(Enum):
     MATCH = auto()
     WITH = auto()
     REC = auto()
+    IF = auto()
+    THEN = auto()
+    ELSE = auto()
     BAR = auto()
     COMMA = auto()
     UNDERSCORE = auto()  # `_` on its own, the wildcard pattern
@@ -37,6 +40,9 @@ KEYWORDS = {
     "match": TokenType.MATCH,
     "with": TokenType.WITH,
     "rec": TokenType.REC,
+    "if": TokenType.IF,
+    "then": TokenType.THEN,
+    "else": TokenType.ELSE,
 }
 
 

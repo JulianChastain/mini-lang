@@ -8,11 +8,12 @@ from lexer import Token, TokenType
 # DECL := 'type' UIDENT IDENT* '=' '|'? CON ('|' CON)*
 # CON := UIDENT TATOM*
 #
-# EXPR := LAMBDA | LET | MATCH | ADD
+# EXPR := LAMBDA | LET | MATCH | IF | ADD
 # LAMBDA := '/' IDENT '->' EXPR
 # LET := 'let' 'rec'? IDENT (':' TYPE)? '=' EXPR 'in' EXPR
 # MATCH := 'match' EXPR 'with' '|'? BRANCH ('|' BRANCH)*
 # BRANCH := PAT '->' EXPR
+# IF := 'if' EXPR 'then' EXPR 'else' EXPR       (a match on True/False)
 # ADD := APP ('+' APP)*
 # ATOM := IDENT | UIDENT | INT | '(' EXPR (':' TYPE)? ')'
 # APP := atom atom*
@@ -361,6 +362,17 @@ class Parser:
             branches.append(self.parse_branch())
         return Match(scrutinee, tuple(branches))
 
+    def parse_if(self) -> Match:
+        """`if c then a else b` is a match on the declared type Bool, so
+        typing, evaluation and exhaustiveness need nothing extra."""
+        self.expect(TokenType.IF)
+        cond = self.parse_expr()
+        self.expect(TokenType.THEN)
+        then = self.parse_expr()
+        self.expect(TokenType.ELSE)
+        otherwise = self.parse_expr()
+        return Match(cond, ((PCon("True"), then), (PCon("False"), otherwise)))
+
     def parse_branch(self) -> tuple[Pattern, Expr]:
         pattern = self.parse_pattern()
         self.expect(TokenType.ARROW)
@@ -403,6 +415,8 @@ class Parser:
             return self.parse_let()
         if t == TokenType.MATCH:
             return self.parse_match()
+        if t == TokenType.IF:
+            return self.parse_if()
         return self.parse_addexpr()
 
     def __call__(self):

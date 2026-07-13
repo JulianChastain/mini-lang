@@ -29,6 +29,7 @@ from parser import (
     DeclGroup,
     Program,
     Match,
+    PCon,
 )
 from context import (
     Context,
@@ -71,6 +72,10 @@ def show_expr(expr: Expr, prec: int = 0) -> str:
             keyword = "let rec" if rec else "let"
             annotation = "" if t is None else f" : {show_type(t)}"
             s = f"{keyword} {name}{annotation} = {show_expr(value)} in {show_expr(body)}"
+            own = 0
+        case Match(cond, ((PCon("True", ()), then), (PCon("False", ()), otherwise))):
+            # Printed back the way it was most likely written.
+            s = f"if {show_expr(cond)} then {show_expr(then)} else {show_expr(otherwise)}"
             own = 0
         case Match(scrutinee, branches):
             parts = [f"match {show_expr(scrutinee)} with"]

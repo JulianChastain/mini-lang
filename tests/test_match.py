@@ -313,3 +313,32 @@ class TestNestedAndShadowedPatterns(unittest.TestCase):
             " | None -> 0"
         )
         self.assertEqual(type_of(src), "Option (Option Int) -> Int")
+
+
+class TestIf(unittest.TestCase):
+    def test_parses_as_match(self):
+        self.assertEqual(
+            parse("if c then 1 else 2"),
+            Match(Var("c"), ((PCon("True"), IntLit(1)), (PCon("False"), IntLit(2)))),
+        )
+
+    def test_prints_back_as_if(self):
+        src = "if c then 1 else if d then 2 else 3"
+        self.assertEqual(show_expr(parse(src)), src)
+
+    def test_typechecks_and_runs(self):
+        src = DATA + "let main = (/b -> if b then 1 else 2) False"
+        self.assertEqual(run_program(src), ("Int", "2"))
+
+    def test_condition_must_be_bool(self):
+        with self.assertRaises(TypeCheckError):
+            type_of("if 1 then 2 else 3")
+
+    def test_branches_must_agree(self):
+        with self.assertRaises(TypeCheckError):
+            type_of("/b -> if b then 1 else True")
+
+    def test_needs_bool_declared(self):
+        with self.assertRaises(TypeCheckError) as caught:
+            typecheck("let main = /b -> if b then 1 else 2")
+        self.assertIn("unknown constructor True", caught.exception.message)
