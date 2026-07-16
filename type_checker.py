@@ -14,7 +14,7 @@ from parser import (
     Lam,
     App,
     IntLit,
-    Add,
+    BinOp,
     Anno,
     Let,
     Type,
@@ -55,8 +55,8 @@ StaticInt = IntType()
 def show_expr(expr: Expr, prec: int = 0) -> str:
     """Print an expression in surface syntax with minimal parentheses.
 
-    Precedence, loosest first: lambda and let (0), `+` (1), application (2),
-    atom (3).
+    Precedence, loosest first: lambda, let, match and if (0), `==` and `<`
+    (1), `+` and `-` (2), `*` (3), application (4), atom (5).
     """
     match expr:
         case Var(name) | Con(name):
@@ -85,11 +85,17 @@ def show_expr(expr: Expr, prec: int = 0) -> str:
                     b = f"({b})"
                 parts.append(f"| {show_pattern(pattern)} -> {b}")
             s, own = " ".join(parts), 0
-        case Add(lhs, rhs):
-            s, own = f"{show_expr(lhs, 1)} + {show_expr(rhs, 2)}", 1
+        case BinOp(op, lhs, rhs):
+            own = _BINOP_PRECEDENCE[op]
+            # Comparisons don't chain, so both sides sit one level tighter.
+            left = own + 1 if own == 1 else own
+            s = f"{show_expr(lhs, left)} {op} {show_expr(rhs, own + 1)}"
         case App(fn, arg):
-            s, own = f"{show_expr(fn, 2)} {show_expr(arg, 3)}", 2
+            s, own = f"{show_expr(fn, 4)} {show_expr(arg, 5)}", 4
     return f"({s})" if prec > own else s
+
+
+_BINOP_PRECEDENCE = {"==": 1, "<": 1, "+": 2, "-": 2, "*": 3}
 
 
 def _ends_with_match(expr: Expr) -> bool:
@@ -116,9 +122,9 @@ def _rename_tvar(expr: Expr, name: str, new_name: str) -> Expr:
             return App(
                 _rename_tvar(fn, name, new_name), _rename_tvar(arg, name, new_name)
             )
-        case Add(lhs, rhs):
-            return Add(
-                _rename_tvar(lhs, name, new_name), _rename_tvar(rhs, name, new_name)
+        case BinOp(op, lhs, rhs):
+            return BinOp(
+                op, _rename_tvar(lhs, name, new_name), _rename_tvar(rhs, name, new_name)
             )
         case Let(x, t, value, body, rec):
             return Let(
@@ -191,10 +197,17 @@ def synth(ctx: Context, expr: Expr) -> tuple[Type, Context]:
         case IntLit(_):
             # 1I⇒
             return StaticInt, ctx
-        case Add(lhs, rhs):
+        case BinOp(op, lhs, rhs):
+            # Integer operators. Comparisons return the declared type Bool.
             ctx = check(ctx, lhs, StaticInt)
             ctx = check(ctx, rhs, StaticInt)
-            return StaticInt, ctx
+            if op in ("+", "-", "*"):
+                return StaticInt, ctx
+            if "Bool" not in ctx.table.types:
+                raise TypeCheckError(
+                    "BinOp", f"{op} needs the type Bool = True | False to be declared"
+                )
+            return TCon("Bool"), ctx
         case Anno(inner, annotated_type):
             # Anno
             if reason := ctx.why_ill_formed(annotated_type):

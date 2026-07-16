@@ -11,6 +11,10 @@ class TokenType(Enum):
     UIDENT = auto()  # capitalized: constructor and type names
     INT = auto()
     PLUS = auto()
+    MINUS = auto()
+    STAR = auto()
+    EQEQ = auto()
+    LT = auto()
     COLON = auto()
     DOT = auto()
     FORALL = auto()
@@ -67,10 +71,17 @@ def lex(text: str) -> list[Token]:
                     tokens.append(Token(TokenType.LAMBDA, char))
                 case "+":
                     tokens.append(Token(TokenType.PLUS, "+"))
+                case "*":
+                    tokens.append(Token(TokenType.STAR, char))
+                case "<":
+                    tokens.append(Token(TokenType.LT, char))
                 case ":":
                     tokens.append(Token(TokenType.COLON, char))
                 case ".":
                     tokens.append(Token(TokenType.DOT, char))
+                case "=" if text[idx + 1 : idx + 2] == "=":
+                    next(t)
+                    tokens.append(Token(TokenType.EQEQ, "=="))
                 case "=":
                     tokens.append(Token(TokenType.EQUALS, char))
                 case "|":
@@ -78,21 +89,17 @@ def lex(text: str) -> list[Token]:
                 case ",":
                     tokens.append(Token(TokenType.COMMA, char))
                 case "-":
-                    try:
-                        next_idx, next_char = next(t)
-                        if next_char == "-":
-                            # `--` comments run to the end of the line
-                            for _, c in t:
-                                if c == "\n":
-                                    break
-                            continue
-                        if next_char != ">":
-                            raise SyntaxError(
-                                f"Expected `>` after `-`, but encountered {next_char}"
-                            )
+                    following = text[idx + 1 : idx + 2]
+                    if following == "-":
+                        # `--` comments run to the end of the line
+                        for _, c in t:
+                            if c == "\n":
+                                break
+                    elif following == ">":
+                        next(t)
                         tokens.append(Token(TokenType.ARROW, "->"))
-                    except StopIteration:
-                        raise SyntaxError("Expected `>` after `-`, but encountered EOF")
+                    else:
+                        tokens.append(Token(TokenType.MINUS, char))
                 case _ if char.isnumeric():
                     n = char
                     while idx + 1 < len(text) and text[idx + 1].isnumeric():

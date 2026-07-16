@@ -4,7 +4,7 @@ from parser import (
     Con,
     App,
     Expr,
-    Add,
+    BinOp,
     IntLit,
     Anno,
     Let,
@@ -110,12 +110,22 @@ def eval(e: Expr, env: dict[str, "Value"]):
                 raise TypeError(f"Can't call nonfunction {closure}")
             new_env = {**closure.env, closure.param: eval(arg, env)}
             return eval(closure.body, new_env)
-        case Add(lhs, rhs):
+        case BinOp(op, lhs, rhs):
             l = eval(lhs, env)
             r = eval(rhs, env)
             if not isinstance(l, int) or not isinstance(r, int):
-                raise TypeError(f"Cannot add non-integers: {l} + {r}")
-            return l + r
+                raise TypeError(f"Cannot apply {op} to non-integers: {l} {op} {r}")
+            match op:
+                case "+":
+                    return l + r
+                case "-":
+                    return l - r
+                case "*":
+                    return l * r
+                case "==":
+                    return ConValue("True" if l == r else "False", 0)
+                case "<":
+                    return ConValue("True" if l < r else "False", 0)
         case IntLit(v):
             return v
         case Anno(inner, _):

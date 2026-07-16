@@ -1,6 +1,6 @@
 import unittest
 from lexer import lex
-from parser import Parser, Match, PVar, PWild, PInt, PCon, Var, IntLit, App, Con
+from parser import Parser, Match, PVar, PWild, PInt, PCon, Var, IntLit, App, Con, BinOp
 from evaluator import eval, ConValue, MatchError, show_value
 from type_checker import show_expr, typecheck
 from context import show_type
@@ -342,3 +342,55 @@ class TestIf(unittest.TestCase):
         with self.assertRaises(TypeCheckError) as caught:
             typecheck("let main = /b -> if b then 1 else 2")
         self.assertIn("unknown constructor True", caught.exception.message)
+
+
+class TestOperators(unittest.TestCase):
+    def test_precedence(self):
+        self.assertEqual(
+            parse("1 + 2 * 3 == 7"),
+            BinOp("==", BinOp("+", IntLit(1), BinOp("*", IntLit(2), IntLit(3))), IntLit(7)),
+        )
+
+    def test_minus_is_left_associative(self):
+        self.assertEqual(run("10 - 3 - 2"), "5")
+
+    def test_application_binds_tighter(self):
+        self.assertEqual(run("(/x -> x * 2) 3 + 1"), "7")
+
+    def test_comparisons_do_not_chain(self):
+        with self.assertRaises(SyntaxError):
+            parse("1 < 2 < 3")
+
+    def test_show_round_trips(self):
+        for src in ["1 + 2 * 3", "(1 + 2) * 3", "a - (b - c)", "a - b - c", "f x < g y + 1"]:
+            self.assertEqual(show_expr(parse(src)), src)
+
+    def test_comparison_type(self):
+        self.assertEqual(type_of("/n -> n < 10"), "Int -> Bool")
+
+    def test_comparison_needs_bool(self):
+        with self.assertRaises(TypeCheckError) as caught:
+            typecheck("let main = 1 == 2")
+        self.assertEqual(caught.exception.rule, "BinOp")
+
+    def test_operands_must_be_int(self):
+        with self.assertRaises(TypeCheckError):
+            type_of("True + 1")
+
+    def test_factorial(self):
+        src = DATA + (
+            "let rec fact : Int -> Int = /n -> if n < 2 then 1 else n * fact (n - 1)\n"
+            "let main = fact 10"
+        )
+        self.assertEqual(run_program(src), ("Int", "3628800"))
+
+    def test_fib(self):
+        src = DATA + (
+            "let rec fib : Int -> Int = /n -> match n with"
+            " | 0 -> 0 | 1 -> 1 | n -> fib (n - 1) + fib (n - 2)\n"
+            "let main = fib 15"
+        )
+        self.assertEqual(run_program(src), ("Int", "610"))
+
+    def test_equality_runs(self):
+        self.assertEqual(run_program(DATA + "let main = 2 * 3 == 6"), ("Bool", "True"))

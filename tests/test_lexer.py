@@ -90,6 +90,31 @@ class TestLexer(unittest.TestCase):
             [TokenType.UIDENT, TokenType.IDENTIFIER, TokenType.INT_TYPE],
         )
 
+    def test_lex_operators(self):
+        types = [t.type for t in lex("a-b*c == d < e = f -> g")]
+        self.assertEqual(
+            types,
+            [
+                TokenType.IDENTIFIER,
+                TokenType.MINUS,
+                TokenType.IDENTIFIER,
+                TokenType.STAR,
+                TokenType.IDENTIFIER,
+                TokenType.EQEQ,
+                TokenType.IDENTIFIER,
+                TokenType.LT,
+                TokenType.IDENTIFIER,
+                TokenType.EQUALS,
+                TokenType.IDENTIFIER,
+                TokenType.ARROW,
+                TokenType.IDENTIFIER,
+                TokenType.EOF,
+            ],
+        )
+
+    def test_minus_at_end(self):
+        self.assertEqual(lex("-")[0].type, TokenType.MINUS)
+
     def test_lex_let(self):
         types = [t.type for t in lex("let x = 1 in x")]
         self.assertEqual(

@@ -2,7 +2,7 @@ import unittest
 from type_checker import synth, check, app_synth, typecheck, show_expr, IntType, FunType
 from lexer import lex
 from parser import Parser
-from parser import IntLit, Add, Lam, Var, Anno, Let, TVar, Forall, Exists
+from parser import IntLit, BinOp, Lam, Var, Anno, Let, TVar, Forall, Exists
 from context import Context, CVar, CTVar, CExists, show_type
 from errors import TypeCheckError
 
@@ -14,7 +14,7 @@ class TestTypeChecker(unittest.TestCase):
         self.assertEqual(synth(Context(), IntLit(5)), (INT, Context()))
 
     def test_synth_add(self):
-        self.assertEqual(synth(Context(), Add(IntLit(1), IntLit(2))), (INT, Context()))
+        self.assertEqual(synth(Context(), BinOp("+", IntLit(1), IntLit(2))), (INT, Context()))
 
     def test_synth_var(self):
         ctx = Context().extend(CVar("x", INT))
@@ -48,7 +48,7 @@ class TestTypeChecker(unittest.TestCase):
     def test_check_forall_rejects_too_specific(self):
         identity = Forall("a", FunType(TVar("a"), TVar("a")))
         with self.assertRaises(TypeError):
-            check(Context(), Lam("x", Add(Var("x"), IntLit(1))), identity)
+            check(Context(), Lam("x", BinOp("+", Var("x"), IntLit(1))), identity)
 
     def test_check_forall_with_shadowed_type_variable(self):
         # The inner annotation's `a` refers to the inner forall's a.
@@ -72,7 +72,7 @@ class TestTypeChecker(unittest.TestCase):
 
     def test_synth_lambda(self):
         # →I⇒: /x -> x + 1 synthesizes ^a -> ^b with both solved to Int
-        t, ctx = synth(Context(), Lam("x", Add(Var("x"), IntLit(1))))
+        t, ctx = synth(Context(), Lam("x", BinOp("+", Var("x"), IntLit(1))))
         self.assertEqual(ctx.apply(t), FunType(INT, INT))
 
     def test_synth_lambda_leaves_existentials_in_context(self):

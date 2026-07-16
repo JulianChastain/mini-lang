@@ -8,13 +8,15 @@ from lexer import Token, TokenType
 # DECL := 'type' UIDENT IDENT* '=' '|'? CON ('|' CON)*
 # CON := UIDENT TATOM*
 #
-# EXPR := LAMBDA | LET | MATCH | IF | ADD
+# EXPR := LAMBDA | LET | MATCH | IF | CMP
 # LAMBDA := '/' IDENT '->' EXPR
 # LET := 'let' 'rec'? IDENT (':' TYPE)? '=' EXPR 'in' EXPR
 # MATCH := 'match' EXPR 'with' '|'? BRANCH ('|' BRANCH)*
 # BRANCH := PAT '->' EXPR
 # IF := 'if' EXPR 'then' EXPR 'else' EXPR       (a match on True/False)
-# ADD := APP ('+' APP)*
+# CMP := ADD (('==' | '<') ADD)?
+# ADD := MUL (('+' | '-') MUL)*
+# MUL := APP ('*' APP)*
 # ATOM := IDENT | UIDENT | INT | '(' EXPR (':' TYPE)? ')'
 # APP := atom atom*
 #
@@ -93,8 +95,10 @@ class IntLit:
     value: int
 
 
+# lhs op rhs, for op in + - * == <
 @dataclass(frozen=True)
-class Add:
+class BinOp:
+    op: str
     lhs: "Expr"
     rhs: "Expr"
 
@@ -147,7 +151,7 @@ class Match:
     branches: tuple[tuple[Pattern, "Expr"], ...]
 
 
-Expr = Var | Con | Lam | App | IntLit | Add | Anno | Let | Match
+Expr = Var | Con | Lam | App | IntLit | BinOp | Anno | Let | Match
 
 
 # A top-level definition: `let [rec] name : type = value` with no `in`.
@@ -184,6 +188,7 @@ class Program:
 
 
 _ATOM_START = (TokenType.IDENTIFIER, TokenType.UIDENT, TokenType.LPAREN, TokenType.INT)
+_CMP_OPS = (TokenType.EQEQ, TokenType.LT)
 _PATTERN_ATOM_START = (
     TokenType.IDENTIFIER,
     TokenType.UNDERSCORE,
@@ -269,11 +274,29 @@ class Parser:
         self.expect(TokenType.IN)
         return Let(name, annotation, value, self.parse_expr(), rec)
 
-    def parse_addexpr(self):
-        lhs = self.parse_app()
-        while self.peek().type == TokenType.PLUS:
+    def parse_cmp(self):
+        lhs = self.parse_addexpr()
+        if self.peek().type in _CMP_OPS:
+            op = self.peek().value
             self.incr()
-            lhs = Add(lhs, self.parse_app())
+            lhs = BinOp(op, lhs, self.parse_addexpr())
+            if self.peek().type in _CMP_OPS:
+                raise SyntaxError("Comparisons don't chain; add parentheses")
+        return lhs
+
+    def parse_addexpr(self):
+        lhs = self.parse_mul()
+        while self.peek().type in (TokenType.PLUS, TokenType.MINUS):
+            op = self.peek().value
+            self.incr()
+            lhs = BinOp(op, lhs, self.parse_mul())
+        return lhs
+
+    def parse_mul(self):
+        lhs = self.parse_app()
+        while self.peek().type == TokenType.STAR:
+            self.incr()
+            lhs = BinOp("*", lhs, self.parse_app())
         return lhs
 
     def parse_app(self):
@@ -417,7 +440,7 @@ class Parser:
             return self.parse_match()
         if t == TokenType.IF:
             return self.parse_if()
-        return self.parse_addexpr()
+        return self.parse_cmp()
 
     def __call__(self):
         v = self.parse_expr()

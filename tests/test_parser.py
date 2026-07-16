@@ -6,7 +6,7 @@ from parser import (
     Lam,
     App,
     IntLit,
-    Add,
+    BinOp,
     Anno,
     IntType,
     FunType,
@@ -72,13 +72,13 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(Parser(lex("42"))(), IntLit(42))
 
     def test_parse_add(self):
-        self.assertEqual(Parser(lex("1 + 2"))(), Add(IntLit(1), IntLit(2)))
+        self.assertEqual(Parser(lex("1 + 2"))(), BinOp("+", IntLit(1), IntLit(2)))
 
     def test_parse_add_add(self):
-        self.assertEqual(Parser(lex("1 + 2 + 3"))(), Add(Add(IntLit(1), IntLit(2)), IntLit(3)))
+        self.assertEqual(Parser(lex("1 + 2 + 3"))(), BinOp("+", BinOp("+", IntLit(1), IntLit(2)), IntLit(3)))
 
     def test_parse_app_add(self):
-        self.assertEqual(Parser(lex("f 1 + 2"))(), Add(App(Var("f"), IntLit(1)), IntLit(2)))
+        self.assertEqual(Parser(lex("f 1 + 2"))(), BinOp("+", App(Var("f"), IntLit(1)), IntLit(2)))
 
     def test_parse_app_int(self):
         self.assertEqual(Parser(lex("f 42"))(), App(Var("f"), IntLit(42)))
@@ -233,7 +233,7 @@ class TestParseLet(unittest.TestCase):
     def test_parse_let(self):
         self.assertEqual(
             Parser(lex("let x = 1 in x + 2"))(),
-            Let("x", None, IntLit(1), Add(Var("x"), IntLit(2))),
+            Let("x", None, IntLit(1), BinOp("+", Var("x"), IntLit(2))),
         )
 
     def test_parse_annotated_let(self):
@@ -285,7 +285,7 @@ class TestParseAnnotations(unittest.TestCase):
             Parser(lex("((/x -> x + 1) : Int -> Int) 2"))(),
             App(
                 Anno(
-                    Lam("x", Add(Var("x"), IntLit(1))),
+                    Lam("x", BinOp("+", Var("x"), IntLit(1))),
                     FunType(IntType(), IntType()),
                 ),
                 IntLit(2),
