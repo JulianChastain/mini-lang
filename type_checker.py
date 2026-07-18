@@ -30,6 +30,7 @@ from parser import (
     Program,
     Match,
     PCon,
+    tuple_arity,
 )
 from context import (
     Context,
@@ -43,7 +44,7 @@ from context import (
     reset_fresh,
     TypeTable,
 )
-from types_table import declare_group
+from types_table import declare_group, builtin_table
 from patterns import check_pattern, show_pattern, pattern_vars, instantiate
 from exhaustiveness import missing_case, useless_branches
 from errors import TypeCheckError, rule_frame
@@ -59,6 +60,8 @@ def show_expr(expr: Expr, prec: int = 0) -> str:
     (1), `+` and `-` (2), `*` (3), application (4), atom (5).
     """
     match expr:
+        case App() if (items := _tuple_items(expr)) is not None:
+            return "(" + ", ".join(show_expr(item) for item in items) + ")"
         case Var(name) | Con(name):
             return name
         case IntLit(value):
@@ -93,6 +96,17 @@ def show_expr(expr: Expr, prec: int = 0) -> str:
         case App(fn, arg):
             s, own = f"{show_expr(fn, 4)} {show_expr(arg, 5)}", 4
     return f"({s})" if prec > own else s
+
+
+def _tuple_items(expr: Expr) -> list[Expr] | None:
+    """The components if `expr` is a tuple constructor fully applied."""
+    args = []
+    while isinstance(expr, App):
+        args.append(expr.arg)
+        expr = expr.func
+    if isinstance(expr, Con) and tuple_arity(expr.name) == len(args):
+        return args[::-1]
+    return None
 
 
 _BINOP_PRECEDENCE = {"==": 1, "<": 1, "+": 2, "-": 2, "*": 3}
@@ -421,7 +435,7 @@ def typecheck_expr(
     never match, are appended to `warnings` if it's given.
     """
     reset_fresh()
-    ctx = Context(table=table or TypeTable())
+    ctx = Context(table=table or builtin_table())
     ctx = ctx.extend(*(CVar(n, t) for n, t in (env or {}).items()))
     t, delta = synth(ctx, expr)
     found = check_matches(delta)
@@ -478,7 +492,7 @@ def typecheck_program(
 ) -> tuple[TypeTable, dict[str, Type], Type | None]:
     """Check every item in order. Returns the final table, the types of the
     definitions, and the type of the final expression if there is one."""
-    table = table or TypeTable()
+    table = table or builtin_table()
     env = dict(env or {})
     for item in program.items:
         match item:

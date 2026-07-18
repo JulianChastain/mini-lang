@@ -5,7 +5,7 @@
 # backtracks, so there's no need to undo anything.
 from dataclasses import dataclass, field, replace
 from itertools import count
-from parser import Type, IntType, FunType, TVar, Forall, Exists, TCon
+from parser import Type, IntType, FunType, TVar, Forall, Exists, TCon, tuple_arity
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +81,8 @@ def show_type(t: Type) -> str:
             if isinstance(param, (FunType, Forall)):
                 lhs = f"({lhs})"
             return f"{lhs} -> {show_type(result)}"
+        case TCon(name, args) if tuple_arity(name) == len(args):
+            return "(" + ", ".join(show_type(arg) for arg in args) + ")"
         case TCon(name, args):
             # Arguments are atoms, so anything that isn't gets parentheses:
             # Option (List Int), List (Int -> Int).
@@ -88,7 +90,7 @@ def show_type(t: Type) -> str:
             for arg in args:
                 s = show_type(arg)
                 if isinstance(arg, (FunType, Forall)) or (
-                    isinstance(arg, TCon) and arg.args
+                    isinstance(arg, TCon) and arg.args and tuple_arity(arg.name) is None
                 ):
                     s = f"({s})"
                 parts.append(s)

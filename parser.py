@@ -17,15 +17,15 @@ from lexer import Token, TokenType
 # CMP := ADD (('==' | '<') ADD)?
 # ADD := MUL (('+' | '-') MUL)*
 # MUL := APP ('*' APP)*
-# ATOM := IDENT | UIDENT | INT | '(' EXPR (':' TYPE)? ')'
+# ATOM := IDENT | UIDENT | INT | '(' EXPR (':' TYPE)? ')' | '(' EXPR (',' EXPR)+ ')'
 # APP := atom atom*
 #
 # TYPE := 'forall' IDENT+ '.' TYPE | TAPP ('->' TYPE)?
 # TAPP := UIDENT TATOM* | TATOM
-# TATOM := 'Int' | IDENT | UIDENT | '(' TYPE ')'
+# TATOM := 'Int' | IDENT | UIDENT | '(' TYPE (',' TYPE)* ')'
 #
 # PAT := UIDENT PATOM* | PATOM
-# PATOM := IDENT | '_' | INT | UIDENT | '(' PAT ')'
+# PATOM := IDENT | '_' | INT | UIDENT | '(' PAT (',' PAT)* ')'
 
 
 @dataclass(frozen=True)
@@ -188,6 +188,25 @@ class Program:
 
 
 _ATOM_START = (TokenType.IDENTIFIER, TokenType.UIDENT, TokenType.LPAREN, TokenType.INT)
+MAX_TUPLE = 7
+
+
+def tuple_name(n: int) -> str:
+    """Tuples are the built-in declared types Tuple2 .. Tuple7."""
+    if not 2 <= n <= MAX_TUPLE:
+        raise SyntaxError(f"Tuples have 2 to {MAX_TUPLE} components, not {n}")
+    return f"Tuple{n}"
+
+
+def tuple_arity(name: str) -> int | None:
+    """n if `name` is the tuple type or constructor Tuple<n>."""
+    if name.startswith("Tuple") and name[5:].isdigit():
+        n = int(name[5:])
+        if 2 <= n <= MAX_TUPLE:
+            return n
+    return None
+
+
 _CMP_OPS = (TokenType.EQEQ, TokenType.LT)
 _PATTERN_ATOM_START = (
     TokenType.IDENTIFIER,
@@ -236,6 +255,15 @@ class Parser:
             if self.peek().type == TokenType.COLON:
                 self.incr()
                 exprv = Anno(exprv, self.parse_type())
+            elif self.peek().type == TokenType.COMMA:
+                # (a, b, c) is the constructor Tuple3 applied to a, b and c.
+                items = [exprv]
+                while self.peek().type == TokenType.COMMA:
+                    self.incr()
+                    items.append(self.parse_expr())
+                exprv = Con(tuple_name(len(items)))
+                for item in items:
+                    exprv = App(exprv, item)
             self.expect(TokenType.RPAREN)
             return exprv
         if nextv.type == TokenType.INT:
@@ -319,9 +347,14 @@ class Parser:
             return TCon(nextv.value)
         if nextv.type == TokenType.LPAREN:
             self.incr()
-            typev = self.parse_type()
+            types = [self.parse_type()]
+            while self.peek().type == TokenType.COMMA:
+                self.incr()
+                types.append(self.parse_type())
             self.expect(TokenType.RPAREN)
-            return typev
+            if len(types) == 1:
+                return types[0]
+            return TCon(tuple_name(len(types)), tuple(types))
         raise SyntaxError("Failed to parse type atom")
 
     def parse_type_app(self):
@@ -425,9 +458,14 @@ class Parser:
             case TokenType.UIDENT:
                 return PCon(tok.value)
             case TokenType.LPAREN:
-                pattern = self.parse_pattern()
+                patterns = [self.parse_pattern()]
+                while self.peek().type == TokenType.COMMA:
+                    self.incr()
+                    patterns.append(self.parse_pattern())
                 self.expect(TokenType.RPAREN)
-                return pattern
+                if len(patterns) == 1:
+                    return patterns[0]
+                return PCon(tuple_name(len(patterns)), tuple(patterns))
         raise SyntaxError(f"Expected a pattern but got {tok.type}")
 
     def parse_expr(self):

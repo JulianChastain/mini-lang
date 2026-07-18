@@ -5,7 +5,7 @@ from lexer import lex
 from parser import Parser, Program, DeclGroup, Definition, Expr, Type
 from context import TypeTable, show_type
 from evaluator import eval, bind, ConValue, Value, show_value
-from types_table import declare_group
+from types_table import declare_group, builtin_table
 from type_checker import typecheck_expr, typecheck_definition
 
 
@@ -39,9 +39,14 @@ Output = Declared | Defined | Result | Warning
 class Session:
     """Everything declared and defined so far."""
 
-    table: TypeTable = field(default_factory=TypeTable)
+    table: TypeTable = field(default_factory=builtin_table)
     types: dict[str, Type] = field(default_factory=dict)
     values: dict[str, Value] = field(default_factory=dict)
+
+    def __post_init__(self):
+        # Constructors of the built-in types (the tuples) need values too.
+        for name, info in self.table.ctors.items():
+            self.values.setdefault(name, ConValue(name, len(info.fields)))
 
     def declare(self, group: DeclGroup) -> Declared:
         self.table = declare_group(self.table, group)

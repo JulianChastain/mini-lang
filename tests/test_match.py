@@ -394,3 +394,59 @@ class TestOperators(unittest.TestCase):
 
     def test_equality_runs(self):
         self.assertEqual(run_program(DATA + "let main = 2 * 3 == 6"), ("Bool", "True"))
+
+
+class TestTuples(unittest.TestCase):
+    def test_tuple_type_and_value(self):
+        self.assertEqual(run_program(DATA + "let main = (1, True)"), ("(Int, Bool)", "(1, True)"))
+
+    def test_swap_is_polymorphic(self):
+        self.assertEqual(
+            type_of("/p -> match p with | (a, b) -> (b, a)"),
+            "forall a b. (a, b) -> (b, a)",
+        )
+
+    def test_tuple_annotation(self):
+        self.assertEqual(type_of("((1, Nil) : (Int, List Bool))"), "(Int, List Bool)")
+
+    def test_nested_tuples_and_lists(self):
+        self.assertEqual(
+            run_program(DATA + "let main = Cons (1, (2, 3)) Nil"),
+            ("List (Int, (Int, Int))", "Cons (1, (2, 3)) Nil"),
+        )
+
+    def test_tuple_pattern_runs(self):
+        src = DATA + "let main = match (3, 4) with | (x, y) -> x * y"
+        self.assertEqual(run_program(src), ("Int", "12"))
+
+    def test_tuple_exhaustiveness(self):
+        with self.assertRaises(TypeCheckError) as caught:
+            type_of(
+                "/p -> match p with | (True, True) -> 1 | (False, _) -> 2"
+            )
+        self.assertIn("missing: (True, False)", caught.exception.message)
+
+    def test_tuple_of_bools_complete(self):
+        type_of(
+            "/p -> match p with | (True, _) -> 1 | (_, True) -> 2 | (False, False) -> 3"
+        )
+
+    def test_arity_mismatch(self):
+        with self.assertRaises(TypeCheckError):
+            type_of("match (1, 2) with | (a, b, c) -> a")
+
+    def test_triples(self):
+        self.assertEqual(type_of("(1, True, Nil)"), "forall a. (Int, Bool, List a)")
+
+    def test_show_round_trips(self):
+        for src in ["(1, f x)", "match p with | (a, (b, c)) -> a"]:
+            self.assertEqual(show_expr(parse(src)), src)
+
+    def test_too_many_components(self):
+        with self.assertRaises(SyntaxError):
+            parse("(1, 2, 3, 4, 5, 6, 7, 8)")
+
+    def test_poly_field_used_at_two_types_in_a_tuple(self):
+        # The C3 example as first stated: one matched f, two types.
+        src = POLY + "let main = match Poly (/x -> x) with | Poly f -> (f 1, f True)"
+        self.assertEqual(run_program(src), ("(Int, Bool)", "(1, True)"))

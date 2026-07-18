@@ -14,6 +14,7 @@ from parser import (
     PWild,
     PInt,
     PCon,
+    tuple_arity,
 )
 from dataclasses import dataclass
 
@@ -64,11 +65,18 @@ def show_value(v: Value) -> str:
     """Print a value the way it would be written in source."""
     if _is_function(v):
         return "<function>"
+    if isinstance(v, ConValue) and tuple_arity(v.name) is not None:
+        return "(" + ", ".join(show_value(arg) for arg in v.args) + ")"
     if isinstance(v, ConValue):
         parts = [v.name]
         for arg in v.args:
             s = show_value(arg)
-            if isinstance(arg, ConValue) and arg.args and not _is_function(arg):
+            if (
+                isinstance(arg, ConValue)
+                and arg.args
+                and not _is_function(arg)
+                and tuple_arity(arg.name) is None
+            ):
                 s = f"({s})"
             parts.append(s)
         return " ".join(parts)

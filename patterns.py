@@ -2,7 +2,19 @@
 #
 # Δ extends Γ with the pattern's variables. The match rule puts a marker
 # before each branch and drops back to it afterwards, which removes them.
-from parser import Type, IntType, Forall, Exists, TCon, Pattern, PVar, PWild, PInt, PCon
+from parser import (
+    Type,
+    IntType,
+    Forall,
+    Exists,
+    TCon,
+    Pattern,
+    PVar,
+    PWild,
+    PInt,
+    PCon,
+    tuple_arity,
+)
 from context import Context, CVar, CExists, substitute, show_type, fresh
 from errors import TypeCheckError, rule_frame
 from subtyping import subtype
@@ -17,6 +29,8 @@ def show_pattern(p: Pattern, atom: bool = False) -> str:
             return "_"
         case PInt(n):
             return str(n)
+        case PCon(name, args) if tuple_arity(name) == len(args):
+            return "(" + ", ".join(show_pattern(q) for q in args) + ")"
         case PCon(name, ()):
             return name
         case PCon(name, args):

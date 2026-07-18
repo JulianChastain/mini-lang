@@ -1,5 +1,5 @@
 # The global table of declared types and their constructors.
-from parser import Type, FunType, TVar, Forall, TCon, DeclGroup
+from parser import Type, FunType, TVar, Forall, TCon, DeclGroup, TypeDecl, MAX_TUPLE, tuple_name
 from context import Context, CTVar, TypeTable, TypeInfo, CtorInfo
 from errors import TypeCheckError
 
@@ -12,6 +12,17 @@ def _scheme(name: str, params: tuple[str, ...], fields: tuple[Type, ...]) -> Typ
     for p in reversed(params):
         t = Forall(p, t)
     return t
+
+
+def builtin_table() -> TypeTable:
+    """The table every program starts from: the tuple types, each
+    declared as `type TupleN a b ... = TupleN a b ...`."""
+    decls = []
+    for n in range(2, MAX_TUPLE + 1):
+        params = tuple("abcdefg"[:n])
+        name = tuple_name(n)
+        decls.append(TypeDecl(name, params, ((name, tuple(TVar(p) for p in params)),)))
+    return declare_group(TypeTable(), DeclGroup(tuple(decls)))
 
 
 def declare_group(table: TypeTable, group: DeclGroup) -> TypeTable:
