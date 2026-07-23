@@ -105,7 +105,7 @@ class TestRunMatch(unittest.TestCase):
     def test_map(self):
         self.assertEqual(
             run(MAP + "map (/x -> x + 10) (Cons 1 (Cons 2 Nil))"),
-            "Cons 11 (Cons 12 Nil)",
+            "[11, 12]",
         )
 
     def test_tree(self):
@@ -156,7 +156,7 @@ class TestTypeMatch(unittest.TestCase):
         self.assertEqual(run_program(src), ("Int", "2"))
         src = DATA + "let main = " + MAP + "map (/x -> Some x) (Cons 1 (Cons 2 Nil))"
         self.assertEqual(
-            run_program(src), ("List (Option Int)", "Cons (Some 1) (Cons (Some 2) Nil)")
+            run_program(src), ("List (Option Int)", "[Some 1, Some 2]")
         )
 
     def test_field_type_mismatch_rejected(self):
@@ -412,7 +412,7 @@ class TestTuples(unittest.TestCase):
     def test_nested_tuples_and_lists(self):
         self.assertEqual(
             run_program(DATA + "let main = Cons (1, (2, 3)) Nil"),
-            ("List (Int, (Int, Int))", "Cons (1, (2, 3)) Nil"),
+            ("List (Int, (Int, Int))", "[(1, (2, 3))]"),
         )
 
     def test_tuple_pattern_runs(self):
@@ -450,3 +450,38 @@ class TestTuples(unittest.TestCase):
         # The C3 example as first stated: one matched f, two types.
         src = POLY + "let main = match Poly (/x -> x) with | Poly f -> (f 1, f True)"
         self.assertEqual(run_program(src), ("(Int, Bool)", "(1, True)"))
+
+
+class TestListSyntax(unittest.TestCase):
+    def test_desugars_to_cons_and_nil(self):
+        self.assertEqual(parse("[1, 2]"), parse("Cons 1 (Cons 2 Nil)"))
+        self.assertEqual(parse("[]"), Con("Nil"))
+
+    def test_patterns(self):
+        (pattern, _), _ = parse("match xs with | [x, y] -> x | _ -> 0").branches
+        self.assertEqual(
+            pattern, PCon("Cons", (PVar("x"), PCon("Cons", (PVar("y"), PCon("Nil")))))
+        )
+
+    def test_typechecks_and_prints(self):
+        self.assertEqual(run_program(DATA + "let main = [1, 2, 3]"), ("List Int", "[1, 2, 3]"))
+        self.assertEqual(run_program(DATA + "let main = []"), ("forall a. List a", "[]"))
+
+    def test_heterogeneous_list_rejected(self):
+        with self.assertRaises(TypeCheckError):
+            type_of("[1, True]")
+
+    def test_list_pattern_exhaustiveness(self):
+        with self.assertRaises(TypeCheckError) as caught:
+            type_of("/xs -> match xs with | [] -> 0 | [x] -> x")
+        self.assertIn("missing: Cons _ (Cons _ _)", caught.exception.message)
+
+    def test_nested_lists(self):
+        self.assertEqual(
+            run_program(DATA + "let main = [[1], [], [2, 3]]"),
+            ("List (List Int)", "[[1], [], [2, 3]]"),
+        )
+
+    def test_show_round_trips(self):
+        for src in ["[1, f x, (2, 3)]", "Cons 1 xs"]:
+            self.assertEqual(show_expr(parse(src)), src)

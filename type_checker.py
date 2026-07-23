@@ -62,6 +62,8 @@ def show_expr(expr: Expr, prec: int = 0) -> str:
     match expr:
         case App() if (items := _tuple_items(expr)) is not None:
             return "(" + ", ".join(show_expr(item) for item in items) + ")"
+        case App() if (items := _list_items(expr)) is not None:
+            return "[" + ", ".join(show_expr(item) for item in items) + "]"
         case Var(name) | Con(name):
             return name
         case IntLit(value):
@@ -107,6 +109,20 @@ def _tuple_items(expr: Expr) -> list[Expr] | None:
     if isinstance(expr, Con) and tuple_arity(expr.name) == len(args):
         return args[::-1]
     return None
+
+
+def _list_items(expr: Expr) -> list[Expr] | None:
+    """The elements if `expr` is a non-empty Cons chain ending in Nil, as
+    list syntax produces."""
+    items = []
+    while (
+        isinstance(expr, App)
+        and isinstance(expr.func, App)
+        and expr.func.func == Con("Cons")
+    ):
+        items.append(expr.func.arg)
+        expr = expr.arg
+    return items if items and expr == Con("Nil") else None
 
 
 _BINOP_PRECEDENCE = {"==": 1, "<": 1, "+": 2, "-": 2, "*": 3}

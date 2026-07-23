@@ -7,6 +7,8 @@ class TokenType(Enum):
     ARROW = auto()
     LPAREN = auto()
     RPAREN = auto()
+    LBRACKET = auto()
+    RBRACKET = auto()
     IDENTIFIER = auto()
     UIDENT = auto()  # capitalized: constructor and type names
     INT = auto()
@@ -67,6 +69,10 @@ def lex(text: str) -> list[Token]:
                     tokens.append(Token(TokenType.LPAREN, char))
                 case ")":
                     tokens.append(Token(TokenType.RPAREN, char))
+                case "[":
+                    tokens.append(Token(TokenType.LBRACKET, char))
+                case "]":
+                    tokens.append(Token(TokenType.RBRACKET, char))
                 case "/":
                     tokens.append(Token(TokenType.LAMBDA, char))
                 case "+":

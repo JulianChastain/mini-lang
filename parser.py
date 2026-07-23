@@ -18,6 +18,7 @@ from lexer import Token, TokenType
 # ADD := MUL (('+' | '-') MUL)*
 # MUL := APP ('*' APP)*
 # ATOM := IDENT | UIDENT | INT | '(' EXPR (':' TYPE)? ')' | '(' EXPR (',' EXPR)+ ')'
+#       | '[' (EXPR (',' EXPR)*)? ']'                  (Cons and Nil)
 # APP := atom atom*
 #
 # TYPE := 'forall' IDENT+ '.' TYPE | TAPP ('->' TYPE)?
@@ -25,7 +26,7 @@ from lexer import Token, TokenType
 # TATOM := 'Int' | IDENT | UIDENT | '(' TYPE (',' TYPE)* ')'
 #
 # PAT := UIDENT PATOM* | PATOM
-# PATOM := IDENT | '_' | INT | UIDENT | '(' PAT (',' PAT)* ')'
+# PATOM := IDENT | '_' | INT | UIDENT | '(' PAT (',' PAT)* ')' | '[' (PAT (',' PAT)*)? ']'
 
 
 @dataclass(frozen=True)
@@ -187,7 +188,13 @@ class Program:
     expr: Expr | None
 
 
-_ATOM_START = (TokenType.IDENTIFIER, TokenType.UIDENT, TokenType.LPAREN, TokenType.INT)
+_ATOM_START = (
+    TokenType.IDENTIFIER,
+    TokenType.UIDENT,
+    TokenType.LPAREN,
+    TokenType.INT,
+    TokenType.LBRACKET,
+)
 MAX_TUPLE = 7
 
 
@@ -214,6 +221,7 @@ _PATTERN_ATOM_START = (
     TokenType.INT,
     TokenType.UIDENT,
     TokenType.LPAREN,
+    TokenType.LBRACKET,
 )
 _TYPE_ATOM_START = (
     TokenType.INT_TYPE,
@@ -269,7 +277,26 @@ class Parser:
         if nextv.type == TokenType.INT:
             self.incr()
             return IntLit(int(nextv.value))
+        if nextv.type == TokenType.LBRACKET:
+            # [a, b] is Cons a (Cons b Nil), using whichever List is declared.
+            items = self._bracketed(self.parse_expr)
+            exprv = Con("Nil")
+            for item in reversed(items):
+                exprv = App(App(Con("Cons"), item), exprv)
+            return exprv
         raise SyntaxError("Failed to parse atom")
+
+    def _bracketed(self, parse_item) -> list:
+        """'[' (item (',' item)*)? ']'"""
+        self.expect(TokenType.LBRACKET)
+        items = []
+        if self.peek().type != TokenType.RBRACKET:
+            items.append(parse_item())
+            while self.peek().type == TokenType.COMMA:
+                self.incr()
+                items.append(parse_item())
+        self.expect(TokenType.RBRACKET)
+        return items
 
     def parse_lam(self):
         self.expect(TokenType.LAMBDA)
@@ -447,6 +474,11 @@ class Parser:
 
     def parse_pattern_atom(self) -> Pattern:
         tok = self.peek()
+        if tok.type == TokenType.LBRACKET:
+            pattern: Pattern = PCon("Nil")
+            for item in reversed(self._bracketed(self.parse_pattern)):
+                pattern = PCon("Cons", (item, pattern))
+            return pattern
         self.incr()
         match tok.type:
             case TokenType.IDENTIFIER:

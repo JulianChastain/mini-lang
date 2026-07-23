@@ -115,13 +115,13 @@ class TestData(unittest.TestCase):
     def test_constructor_values(self):
         self.assertEqual(
             run(self.DATA + "let main = Some (Cons 1 (Cons 2 Nil))"),
-            ("Option (List Int)", "Some (Cons 1 (Cons 2 Nil))"),
+            ("Option (List Int)", "Some [1, 2]"),
         )
 
     def test_partially_applied_constructor(self):
         self.assertEqual(
             run(self.DATA + "let cons1 = Cons 1\nlet main = cons1 (cons1 Nil)"),
-            ("List Int", "Cons 1 (Cons 1 Nil)"),
+            ("List Int", "[1, 1]"),
         )
 
     def test_partial_constructor_prints_as_function(self):

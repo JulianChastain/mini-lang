@@ -65,6 +65,8 @@ def show_value(v: Value) -> str:
     """Print a value the way it would be written in source."""
     if _is_function(v):
         return "<function>"
+    if (items := _list_items(v)) is not None:
+        return "[" + ", ".join(show_value(item) for item in items) + "]"
     if isinstance(v, ConValue) and tuple_arity(v.name) is not None:
         return "(" + ", ".join(show_value(arg) for arg in v.args) + ")"
     if isinstance(v, ConValue):
@@ -76,11 +78,23 @@ def show_value(v: Value) -> str:
                 and arg.args
                 and not _is_function(arg)
                 and tuple_arity(arg.name) is None
+                and _list_items(arg) is None
             ):
                 s = f"({s})"
             parts.append(s)
         return " ".join(parts)
     return str(v)
+
+
+def _list_items(v: Value) -> list[Value] | None:
+    """The elements, if `v` is a finished list built from Cons and Nil."""
+    items = []
+    while isinstance(v, ConValue) and v.name == "Cons" and len(v.args) == 2:
+        items.append(v.args[0])
+        v = v.args[1]
+    if isinstance(v, ConValue) and v.name == "Nil" and not v.args:
+        return items
+    return None
 
 
 def _is_function(v: Value) -> bool:
