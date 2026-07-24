@@ -11,7 +11,7 @@ class TestAccepted(unittest.TestCase):
     def test_accepted_programs(self):
         for ex in ACCEPT:
             with self.subTest(ex.title, src=ex.src):
-                t, v = run(ex.src)
+                t, v = run(ex.src, Session.with_prelude())
                 self.assertEqual(t, ex.type)
                 if ex.value is not None:
                     self.assertEqual(v, ex.value)
@@ -45,6 +45,45 @@ class TestErrorTrace(unittest.TestCase):
                 return str(err)
 
         self.assertEqual(message("/x -> x x"), message("/x -> x x"))
+
+
+class TestPrelude(unittest.TestCase):
+    def setUp(self):
+        self.session = Session.with_prelude()
+
+    def run_prelude(self, src):
+        return run(src, self.session)
+
+    def test_map(self):
+        self.assertEqual(
+            self.run_prelude("let main = map (/x -> x * 2) [1, 2, 3]"),
+            ("List Int", "[2, 4, 6]"),
+        )
+
+    def test_filter(self):
+        self.assertEqual(
+            self.run_prelude("let main = filter (/x -> x < 3) [5, 1, 4, 2]"),
+            ("List Int", "[1, 2]"),
+        )
+
+    def test_foldr_length_append(self):
+        self.assertEqual(
+            self.run_prelude("let main = foldr (/x -> /acc -> x + acc) 0 [1, 2, 3]"),
+            ("Int", "6"),
+        )
+        self.assertEqual(self.run_prelude("let main = length [True, False]"), ("Int", "2"))
+        self.assertEqual(
+            self.run_prelude("let main = append [1] [2, 3]"), ("List Int", "[1, 2, 3]")
+        )
+
+    def test_prelude_types(self):
+        types = {name: show_type(t) for name, t in self.session.types.items()}
+        self.assertEqual(types["map"], "forall a b. (a -> b) -> List a -> List b")
+        self.assertEqual(types["length"], "forall a. List a -> Int")
+        self.assertEqual(types["not"], "Bool -> Bool")
+
+    def test_prelude_declares_bool(self):
+        self.assertEqual(self.run_prelude("let main = not (1 < 2)"), ("Bool", "False"))
 
 
 class TestPrograms(unittest.TestCase):

@@ -4,6 +4,8 @@
     uv run python main.py 'EXPR'          typecheck and run one expression
     uv run python main.py FILE            typecheck and run a program file
     uv run python main.py --demo          tour of accepted and rejected programs
+
+The prelude (prelude.mini) is loaded first; pass --no-prelude to skip it.
 """
 import os
 import sys
@@ -70,11 +72,18 @@ def _print_result(result: Result):
     print(f"  {show_value(result.value)} : {green(show_type(result.type))}")
 
 
+_use_prelude = True
+
+
+def new_session() -> Session:
+    return Session.with_prelude() if _use_prelude else Session()
+
+
 def report(src: str, session: Session | None = None) -> bool:
     """Run a program and print its answer as `value : type`. Returns
     whether it ran."""
     try:
-        outputs = (session or Session()).run_source(src)
+        outputs = (session or new_session()).run_source(src)
     except _ERRORS as err:
         _print_error(err)
         return False
@@ -123,7 +132,7 @@ def repl_line(session: Session, line: str):
 
 def repl():
     print("mini-lang. :help for commands, :q to quit.")
-    session = Session()
+    session = new_session()
     while True:
         try:
             line = input("> ").strip()
@@ -139,6 +148,10 @@ def repl():
 
 
 def main(argv: list[str]) -> int:
+    global _use_prelude
+    if "--no-prelude" in argv:
+        _use_prelude = False
+        argv = [a for a in argv if a != "--no-prelude"]
     match argv:
         case []:
             repl()

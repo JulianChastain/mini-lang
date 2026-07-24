@@ -1,12 +1,16 @@
 # Running whole programs: declarations, definitions and a final
 # expression, checked and evaluated in order. Shared by files and the REPL.
 from dataclasses import dataclass, field
+from pathlib import Path
 from lexer import lex
 from parser import Parser, Program, DeclGroup, Definition, Expr, Type
 from context import TypeTable, show_type
 from evaluator import eval, bind, ConValue, Value, show_value
 from types_table import declare_group, builtin_table
 from type_checker import typecheck_expr, typecheck_definition
+
+
+PRELUDE_PATH = Path(__file__).parent / "prelude.mini"
 
 
 @dataclass(frozen=True)
@@ -42,6 +46,14 @@ class Session:
     table: TypeTable = field(default_factory=builtin_table)
     types: dict[str, Type] = field(default_factory=dict)
     values: dict[str, Value] = field(default_factory=dict)
+
+    @classmethod
+    def with_prelude(cls) -> "Session":
+        """A session with prelude.mini loaded: Bool, Option, List, and
+        map, filter, foldr, length, append and not."""
+        session = cls()
+        session.run_source(PRELUDE_PATH.read_text())
+        return session
 
     def __post_init__(self):
         # Constructors of the built-in types (the tuples) need values too.
