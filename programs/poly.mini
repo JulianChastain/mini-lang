@@ -1,0 +1,37 @@
+-- Polymorphic fields: what the higher-rank types of Dunfield and
+-- Krishnaswami (2013) buy you. A field can hold a polymorphic function,
+-- and matching on it binds a variable with that polymorphic type.
+
+type Poly = Poly (forall a. a -> a)
+
+-- f is used at two different types in one branch.
+let both : Poly -> (Int, Bool) = /p -> match p with
+  | Poly f -> (f 1, f True)
+
+-- Church numerals as a data type. A numeral can be used at any type, even
+-- after being stored and taken back out.
+type Nat = Nat (forall a. (a -> a) -> a -> a)
+
+let zero : Nat = Nat (/s -> /z -> z)
+let succ : Nat -> Nat = /n -> match n with
+  | Nat k -> Nat (/s -> /z -> s (k s z))
+let add : Nat -> Nat -> Nat = /m -> /n -> match (m, n) with
+  | (Nat j, Nat k) -> Nat (/s -> /z -> j s (k s z))
+
+-- The same numeral at Int and at List Bool.
+let toInt : Nat -> Int = /n -> match n with
+  | Nat k -> k (/x -> x + 1) 0
+let toList : Nat -> List Bool = /n -> match n with
+  | Nat k -> k (Cons True) []
+
+let three = succ (succ (succ zero))
+
+-- A record of polymorphic operations, each used at two element types.
+type ListOps = ListOps (forall a. List a -> Int) (forall a. List a -> List a -> List a)
+
+let ops : ListOps = ListOps length append
+
+let useOps : ListOps -> (Int, Int) = /o -> match o with
+  | ListOps len app -> (len (app [1, 2] [3]), len (app [True] []))
+
+let main = (both (Poly (/x -> x)), toInt (add three three), toList three, useOps ops)

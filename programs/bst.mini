@@ -1,0 +1,39 @@
+-- Binary search trees, generic in the element type. There are no type
+-- classes, so the ordering is passed in as a value of type Ord a.
+
+type Tree a = Leaf | Node (Tree a) a (Tree a)
+type Ord a = Ord (a -> a -> Bool)
+
+let intOrd : Ord Int = Ord (/x -> /y -> x < y)
+let max : Int -> Int -> Int = /a -> /b -> if a < b then b else a
+
+let rec insert : forall a. Ord a -> a -> Tree a -> Tree a =
+  /ord -> /x -> /t -> match (ord, t) with
+    | (_, Leaf) -> Node Leaf x Leaf
+    | (Ord lt, Node l y r) ->
+        if lt x y then Node (insert ord x l) y r
+        else if lt y x then Node l y (insert ord x r)
+        else t
+
+let rec member : forall a. Ord a -> a -> Tree a -> Bool =
+  /ord -> /x -> /t -> match (ord, t) with
+    | (_, Leaf) -> False
+    | (Ord lt, Node l y r) ->
+        if lt x y then member ord x l
+        else if lt y x then member ord x r
+        else True
+
+-- In-order traversal gives the elements sorted.
+let rec toList : forall a. Tree a -> List a = /t -> match t with
+  | Leaf -> []
+  | Node l x r -> append (toList l) (Cons x (toList r))
+
+let fromList : forall a. Ord a -> List a -> Tree a = /ord -> foldr (insert ord) Leaf
+
+let rec height : forall a. Tree a -> Int = /t -> match t with
+  | Leaf -> 0
+  | Node l _ r -> 1 + max (height l) (height r)
+
+let tree = fromList intOrd [5, 2, 8, 1, 9, 3]
+
+let main = (toList tree, member intOrd 3 tree, member intOrd 7 tree, height tree)

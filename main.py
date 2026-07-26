@@ -97,6 +97,7 @@ def report(src: str, session: Session | None = None) -> bool:
 
 
 def demo():
+    print(dim("(each program runs with the prelude loaded)\n"))
     for heading, examples in (("Accepted", ACCEPT), ("Rejected", REJECT)):
         print(bold(f"{heading}\n"))
         for ex in examples:

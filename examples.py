@@ -1,5 +1,6 @@
 # Programs that show off the checker, shared by `main.py --demo` and the
-# tests so the demo can't drift from what actually works.
+# tests so the demo can't drift from what actually works. Each one runs
+# with the prelude loaded.
 from dataclasses import dataclass
 
 
@@ -87,6 +88,32 @@ ACCEPT = [
         "((/x -> x) : forall a. a -> a) ((/y -> y) : forall b. b -> b)",
         "forall a. a -> a",
     ),
+    Accept("data: map from the prelude", "map (/x -> x * 2) [1, 2, 3]", "List Int", "[2, 4, 6]"),
+    Accept(
+        "data: an unannotated match is inferred",
+        "(/o -> match o with | None -> 0 | Some n -> n + 1) (Some 41)",
+        "Int",
+        "42",
+    ),
+    Accept(
+        "data: tuples, with a polymorphic swap",
+        "(/p -> match p with | (a, b) -> (b, a)) (1, True)",
+        "(Bool, Int)",
+        "(True, 1)",
+    ),
+    Accept(
+        "data: let rec, if and comparison",
+        "let rec fact : Int -> Int = /n -> if n < 2 then 1 else n * fact (n - 1) in fact 10",
+        "Int",
+        "3628800",
+    ),
+    Accept(
+        "data: a polymorphic field, used at two types in one branch",
+        "type Poly = Poly (forall a. a -> a) "
+        "let main = match Poly (/x -> x) with | Poly f -> (f 1, f True)",
+        "(Int, Bool)",
+        "(1, True)",
+    ),
 ]
 
 REJECT = [
@@ -125,6 +152,27 @@ REJECT = [
         "let id : forall a. a -> a = /x -> x in"
         " (id : (forall b. b -> b) -> (forall b. b -> b))",
         "InstRSolve",
+    ),
+    Reject(
+        "data: a match that misses a case (found by Maranget's algorithm)",
+        "/xs -> match xs with | [] -> 0 | [x] -> x",
+        "Match",
+    ),
+    Reject(
+        "data: Cons x _ -> x + 1 on a List Bool",
+        "((/xs -> match xs with | Cons x _ -> x + 1 | [] -> 0) : List Bool -> Int)",
+        "<:TCon",
+    ),
+    Reject("data: a list with mixed element types", "[1, True]", "<:TCon"),
+    Reject(
+        "data: a polymorphic field won't take a monomorphic function",
+        "type Poly = Poly (forall a. a -> a) let main = Poly (/x -> x + 1)",
+        "<:Var",
+    ),
+    Reject(
+        "data: type arguments must be monotypes",
+        "(Nil : List (forall a. a))",
+        "Anno",
     ),
     Reject("lambda annotated as Int", "((/x -> x) : Int)", "<:→"),
     Reject("applying a non-function", "1 2", "→App"),

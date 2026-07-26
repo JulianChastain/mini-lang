@@ -22,7 +22,7 @@ class TestRejected(unittest.TestCase):
         for ex in REJECT:
             with self.subTest(ex.title, src=ex.src):
                 with self.assertRaises(TypeCheckError) as caught:
-                    typecheck(ex.src)
+                    Session.with_prelude().run_source(ex.src)
                 self.assertEqual(caught.exception.rule, ex.rule)
 
 
@@ -87,9 +87,44 @@ class TestPrelude(unittest.TestCase):
 
 
 class TestPrograms(unittest.TestCase):
+    def run_file(self, name):
+        path = Path(__file__).parent.parent / "programs" / name
+        return run(path.read_text(), Session.with_prelude())
+
     def test_church_numerals(self):
-        path = Path(__file__).parent.parent / "programs" / "church.mini"
-        self.assertEqual(run(path.read_text()), ("Int", "36"))
+        self.assertEqual(self.run_file("church.mini"), ("Int", "36"))
+
+    def test_binary_search_tree(self):
+        self.assertEqual(
+            self.run_file("bst.mini"),
+            ("(List Int, Bool, Bool, Int)", "([1, 2, 3, 5, 8, 9], True, False, 4)"),
+        )
+
+    def test_expression_evaluator(self):
+        self.assertEqual(
+            self.run_file("eval.mini"),
+            (
+                "(Option Int, Option Int, Option Int, Expr)",
+                "(Some 15, None, Some 100, Var 7)",
+            ),
+        )
+
+    def test_polymorphic_fields(self):
+        self.assertEqual(
+            self.run_file("poly.mini"),
+            (
+                "((Int, Bool), Int, List Bool, (Int, Int))",
+                "((1, True), 6, [True, True, True], (3, 1))",
+            ),
+        )
+
+    def test_programs_have_no_warnings(self):
+        from program import Warning
+
+        for name in ["bst.mini", "eval.mini", "poly.mini"]:
+            path = Path(__file__).parent.parent / "programs" / name
+            outputs = Session.with_prelude().run_source(path.read_text())
+            self.assertFalse([o for o in outputs if isinstance(o, Warning)], name)
 
 
 class TestSession(unittest.TestCase):

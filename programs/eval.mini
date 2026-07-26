@@ -1,0 +1,59 @@
+-- A small expression language, with an evaluator and a simplifier written
+-- in minilang. Variables are numbered, and environments are association
+-- lists from numbers to values.
+
+type Expr =
+  | Num Int
+  | Var Int
+  | Add Expr Expr
+  | Mul Expr Expr
+  | Let Int Expr Expr       -- Let n e1 e2 binds variable n to e1 in e2
+  | IfZero Expr Expr Expr   -- IfZero c t e is t if c is 0, otherwise e
+
+let rec lookup : forall a. Int -> List (Int, a) -> Option a =
+  /k -> /env -> match env with
+    | [] -> None
+    | Cons (key, v) rest -> if k == key then Some v else lookup k rest
+
+-- Combine two results that might have failed.
+let both : (Int -> Int -> Int) -> Option Int -> Option Int -> Option Int =
+  /f -> /a -> /b -> match (a, b) with
+    | (Some x, Some y) -> Some (f x y)
+    | _ -> None
+
+-- None means the expression used a variable that isn't bound.
+let rec eval : List (Int, Int) -> Expr -> Option Int = /env -> /e -> match e with
+  | Num n -> Some n
+  | Var n -> lookup n env
+  | Add a b -> both (/x -> /y -> x + y) (eval env a) (eval env b)
+  | Mul a b -> both (/x -> /y -> x * y) (eval env a) (eval env b)
+  | Let n bound body -> (match eval env bound with
+      | Some v -> eval (Cons (n, v) env) body
+      | None -> None)
+  | IfZero c t f -> (match eval env c with
+      | Some 0 -> eval env t
+      | Some _ -> eval env f
+      | None -> None)
+
+-- Nested patterns pick out the algebraic identities.
+let rec simplify : Expr -> Expr = /e -> match e with
+  | Add (Num 0) x -> simplify x
+  | Add x (Num 0) -> simplify x
+  | Mul (Num 1) x -> simplify x
+  | Mul x (Num 1) -> simplify x
+  | Mul (Num 0) _ -> Num 0
+  | Add a b -> Add (simplify a) (simplify b)
+  | Mul a b -> Mul (simplify a) (simplify b)
+  | Let n a b -> Let n (simplify a) (simplify b)
+  | IfZero c t f -> IfZero (simplify c) (simplify t) (simplify f)
+  | other -> other
+
+-- let x0 = 5 in x0 + 2 * x0
+let program = Let 0 (Num 5) (Add (Var 0) (Mul (Num 2) (Var 0)))
+
+let main =
+  ( eval [] program
+  , eval [] (Add (Var 0) (Num 1))
+  , eval [] (IfZero (Add (Num 2) (Num (0 - 2))) (Num 100) (Num 200))
+  , simplify (Add (Num 0) (Mul (Num 1) (Mul (Var 7) (Num 1))))
+  )
