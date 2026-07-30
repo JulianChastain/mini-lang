@@ -1,23 +1,19 @@
 # Next actions
 
-## Done: Polymorphism
-The checker follows Dunfield & Krishnaswami (2013): ordered context with
-existential variables (`context.py`), instantiation (`instantiation.py`),
-subtyping (`subtyping.py`), and the typing rules (`type_checker.py`).
-Unannotated lambdas synthesize via →I⇒. Existentials still unsolved at the
-end of a program are generalized (`/x -> x` gives `forall a. a -> a`); there
-is no `let`, so nothing is generalized mid-program. Errors name the failing
-rule and carry a trace; `examples.py` drives both `main.py --demo` and
-`tests/test_examples.py`.
+## Done in v0.2
+- Declared types with arguments (`type List a = Nil | Cons a (List a)`), a
+  global type table, and checks for arity, scope and duplicates
+- <:TCon and InstL/RTCon; constructors typed as polymorphic functions
+- `let rec` with a required annotation
+- Pattern matching: syntax, evaluation, the pattern judgment, Match⇐/⇒
+- Polymorphic fields (`type Poly = Poly (forall a. a -> a)`)
+- Exhaustiveness and unreachable-branch checks (Maranget)
+- `if`, `- * == <`, tuples, list syntax, and a prelude in minilang
+- Example programs: bst, eval, poly
 
-## Next: Algebraic data types and pattern matching
-
-## Done: let and a REPL
-`let x [: A] = e1 in e2`. Without an annotation x is monomorphic, like the
-paper; with one it can be polymorphic. `main.py` prints `value : type` and
-has a REPL with session definitions, file mode, and `--demo`.
-`programs/church.mini` shows rank-2 Church numerals.
-
-## Known TODOs
-- Optional: let-generalization, so polymorphic lets don't need annotations
-- Type aliases, so `programs/church.mini` can name its numeral type
+## Ideas
+- let-generalization, so polymorphic lets don't need annotations
+- Type aliases, so Church numerals can name their type
+- Strings and a `print`, for programs with output
+- Or-patterns and guards (the usefulness algorithm extends to both)
+- Source positions in errors
