@@ -82,19 +82,82 @@ The core is the 2013 paper, rule for rule. The ordered context is **immutable**:
     while applying a function of type (forall a. a -> a) -> Int to /x -> x + 1  (→App)
 ```
 
-### From the paper
+### Rule by rule
 
-| Judgment | Rules | Function |
+Every rule of the paper's algorithmic system, and every rule added for data, names the function that implements it. In the code, each rule's name appears in a comment on its branch or in the errors it raises, so you can search for it. `tests/test_readme.py` checks that every rule in these tables appears in the source of the function listed.
+
+**Algorithmic subtyping, Γ ⊢ A <: B ⊣ Δ (Fig. 9)**
+
+| Rule | What it does | Function |
 | --- | --- | --- |
-| Γ ⊢ A, applying [Γ]A | well-formedness, substitution | `Context.why_ill_formed`, `Context.apply` (`context.py`) |
-| Γ ⊢ A <: B ⊣ Δ (Fig. 9) | <:Var, <:Unit (here <:Int), <:Exvar, <:→, <:∀L, <:∀R, <:InstantiateL/R | `subtype` (`subtyping.py`) |
-| Γ ⊢ α̂ :≤= A ⊣ Δ (Fig. 10) | InstLSolve, InstLReach, InstLArr, InstLAllR | `inst_l` (`instantiation.py`) |
-| Γ ⊢ A =≤: α̂ ⊣ Δ (Fig. 10) | InstRSolve, InstRReach, InstRArr, InstRAllL | `inst_r` |
-| Γ ⊢ e ⇐ A ⊣ Δ (Fig. 11) | 1I, ∀I, →I, Sub | `check` (`type_checker.py`) |
-| Γ ⊢ e ⇒ A ⊣ Δ | Var, Anno, 1I⇒, →I⇒, →E | `synth` |
-| Γ ⊢ A • e ⇒⇒ C ⊣ Δ | ∀App, α̂App, →App | `app_synth` |
+| <:Var | α <: α, if α is in scope | `subtyping.subtype` |
+| <:Unit | the base type; here `Int <: Int` | `subtyping.subtype` |
+| <:Exvar | α̂ <: α̂ | `subtyping.subtype` |
+| <:→ | contravariant in the parameter, then [Θ] applied to the results | `subtyping.subtype` |
+| <:∀L | ∀α. A <: B: open α with a fresh α̂ behind a marker ▶α̂ | `subtyping.subtype` |
+| <:∀R | A <: ∀α. B: put α in scope, then drop it; tried before ∀L | `subtyping.subtype` |
+| <:InstantiateL | α̂ <: A becomes α̂ :≤= A, after the occurs check | `subtyping.subtype` |
+| <:InstantiateR | A <: α̂ becomes A =≤: α̂, after the occurs check | `subtyping.subtype` |
 
-### Extensions in the same style
+**Instantiation, Γ ⊢ α̂ :≤= A ⊣ Δ and Γ ⊢ A =≤: α̂ ⊣ Δ (Fig. 10)**
+
+| Rule | What it does | Function |
+| --- | --- | --- |
+| InstLSolve | α̂ := τ, if τ is a monotype well-formed left of α̂ | `instantiation.inst_l` |
+| InstLReach | α̂ :≤= β̂ with β̂ later: β̂ := α̂ | `instantiation.inst_l` |
+| InstLArr | split α̂ into α̂₁ → α̂₂, then A₁ =≤: α̂₁ and α̂₂ :≤= [Θ]A₂ | `instantiation.inst_l` |
+| InstLAllR | α̂ :≤= ∀β. B: put β in scope, instantiate, then drop it | `instantiation.inst_l` |
+| InstRSolve | τ =≤: α̂: α̂ := τ | `instantiation.inst_r` |
+| InstRReach | β̂ =≤: α̂ with β̂ later: β̂ := α̂ | `instantiation.inst_r` |
+| InstRArr | split α̂, then α̂₁ :≤= A₁ and [Θ]A₂ =≤: α̂₂ | `instantiation.inst_r` |
+| InstRAllL | ∀β. B =≤: α̂: open β with a fresh β̂ behind ▶β̂ | `instantiation.inst_r` |
+
+**Typing (Fig. 11)**
+
+| Rule | Judgment | Function |
+| --- | --- | --- |
+| Var | Γ ⊢ x ⇒ A, for x : A in Γ | `type_checker.synth` |
+| Sub | e ⇐ B, from e ⇒ A and [Θ]A <: [Θ]B | `type_checker.check` |
+| Anno | (e : A) ⇒ A, from Γ ⊢ A and e ⇐ A | `type_checker.synth` |
+| 1I | the unit introduction, checking; here `n ⇐ Int` | `type_checker.check` |
+| 1I⇒ | the unit introduction, synthesizing; here `n ⇒ Int` | `type_checker.synth` |
+| ∀I | e ⇐ ∀α. A, from Γ, α ⊢ e ⇐ A | `type_checker.check` |
+| ∀App | ∀α. A • e: instantiate α with a fresh α̂ | `type_checker.app_synth` |
+| →I | λx. e ⇐ A → B, from Γ, x : A ⊢ e ⇐ B | `type_checker.check` |
+| →I⇒ | λx. e ⇒ α̂ → β̂, from Γ, α̂, β̂, x : α̂ ⊢ e ⇐ β̂ | `type_checker.synth` |
+| →E | e₁ e₂: synthesize e₁, then apply its type to e₂ | `type_checker.synth` |
+| α̂App | α̂ • e: split α̂ into α̂₁ → α̂₂ and check e ⇐ α̂₁ | `type_checker.app_synth` |
+| →App | A → C • e: check e ⇐ A, giving C | `type_checker.app_synth` |
+
+**Added for data, lets and operators**
+
+| Rule | What it does | Function |
+| --- | --- | --- |
+| Decl | checks a group of declarations and builds constructor schemes | `types_table.declare_group` |
+| <:TCon | T A₁…Aₙ <: T B₁…Bₙ, argument by argument | `subtyping.subtype` |
+| InstLTCon | α̂ :≤= T A₁…Aₙ: split α̂ into T α̂₁…α̂ₙ in place | `instantiation.inst_l` |
+| InstRTCon | the mirror image of InstLTCon | `instantiation.inst_r` |
+| Con | K ⇒ its scheme ∀ā. F₁ → … → Fₙ → T ā | `type_checker.synth` |
+| Let⇒ | let, synthesizing; removes only the x : A entry afterwards | `type_checker.synth` |
+| Let⇐ | let, checking the body against the expected type | `type_checker.check` |
+| LetRec | e₁ ⇐ A with f : A already in scope; the annotation is required | `type_checker._let_binding` |
+| BinOp | `+ - *` on Int; `== <` give Bool | `type_checker.synth` |
+| Match⇐ | each branch between a marker ▶ and a drop back to it | `type_checker._check_match` |
+| Match⇒ | a fresh β̂ for the result, then Match⇐ | `type_checker.synth` |
+| PVar | x ⇐ A extends Γ with x : A, polymorphic or not | `patterns.check_pattern` |
+| PWild | _ ⇐ A leaves Γ unchanged | `patterns.check_pattern` |
+| PInt | n ⇐ A, from A <: Int | `patterns.check_pattern` |
+| PCon | K p₁…pₙ ⇐ A, from A <: T β̂, then each pᵢ against its field | `patterns.check_pattern` |
+
+The supporting operations:
+- Γ ⊢ A, well-formedness: `Context.why_ill_formed`
+- [Γ]A, applying a context: `Context.apply`
+- splitting α̂: `Context.split`
+- the occurs check: `subtyping._check_occurs`
+- top-level generalization: `type_checker.generalize`
+- missing and unreachable cases: `exhaustiveness.missing_case` and `exhaustiveness.useless_branches`
+
+### The new rules in the paper's notation
 
 Declared types live in a global table of type parameters and constructor schemes (`types_table.py`), carried on Γ beside the ordered entries. Declarations never go out of scope, and every rule already passes Γ along, so nothing needed a new parameter.
 
