@@ -1,5 +1,7 @@
 # mini-lang
 
+[![tests](https://github.com/JulianChastain/mini-lang/actions/workflows/tests.yml/badge.svg)](https://github.com/JulianChastain/mini-lang/actions/workflows/tests.yml)
+
 A small ML-style functional language with **higher-rank polymorphism**, built to implement Dunfield & Krishnaswami's *Complete and Easy Bidirectional Typechecking for Higher-Rank Polymorphism* (2013), and then extend it with algebraic data types and pattern matching in the same style.
 
 ```
@@ -238,3 +240,5 @@ The marker ▶ removes each branch's variables afterwards. Match⇒ treats a mat
 ## Running tests
 
     cd tests && PYTHONPATH=.. uv run python -m unittest discover -s .
+
+GitHub Actions (`.github/workflows/tests.yml`) runs this on Python 3.12 and 3.13 for every push and pull request, then runs `--demo` and every program in `programs/`.

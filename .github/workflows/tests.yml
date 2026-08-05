@@ -1,0 +1,36 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # pyproject.toml requires 3.12+ (the code uses PEP 701 f-strings).
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Unit tests
+        working-directory: tests
+        env:
+          PYTHONPATH: ..
+        run: uv run python -m unittest discover -s . -v
+
+      - name: Demo
+        run: uv run python main.py --demo
+
+      - name: Example programs
+        run: |
+          for program in programs/*.mini; do
+            echo "== $program"
+            uv run python main.py "$program"
+          done
